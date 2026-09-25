@@ -999,7 +999,8 @@
               command: { stringValue: "START_STREAM" },
               camera: { stringValue: cameraChoice },
               roomId: { stringValue: roomId },
-              timestamp: { integerValue: String(Date.now()) }
+              timestamp: { integerValue: String(Date.now()) },
+              status: { stringValue: "PENDING" }
             }
           })
         });
@@ -1008,14 +1009,30 @@
 
         // 3) 안드로이드 폰의 Offer SDP 및 ICE 후보군 폴링 감시
         let hasReceivedOffer = false;
+        let commandPollCount = 0;
         const processedCandidateNames = new Set();
 
         if (signalingPollInterval) clearInterval(signalingPollInterval);
 
         signalingPollInterval = setInterval(async () => {
+          commandPollCount++;
           try {
             // A. Offer 수신 확인
             if (!hasReceivedOffer) {
+              // 폰에서 명령을 수신했는지 commands/stream status 확인
+              if (commandPollCount % 2 === 0) {
+                try {
+                  const cmdRes = await fetch(`${REST_BASE}/devices/${deviceId}/commands/stream`);
+                  if (cmdRes.ok) {
+                    const cmdDoc = await cmdRes.json();
+                    const parsedCmd = parseFirestoreDoc(cmdDoc);
+                    if (parsedCmd && parsedCmd.status === "DEVICE_RECEIVED") {
+                      btnStart.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 기기 신호 수신 확인! 카메라 여는 중...`;
+                    }
+                  }
+                } catch(e) {}
+              }
+
               const roomRes = await fetch(`${REST_BASE}/devices/${deviceId}/signaling/${roomId}`);
               if (roomRes.ok) {
                 const roomDoc = await roomRes.json();
@@ -1043,6 +1060,14 @@
                   console.log("Answer 전송 완료!");
                 }
               }
+            }
+
+            if (!hasReceivedOffer && commandPollCount > 35) {
+              clearInterval(signalingPollInterval);
+              signalingPollInterval = null;
+              btnStart.disabled = false;
+              btnStart.innerHTML = `<i class="fa-solid fa-video"></i> 3분간 실시간 스트리밍 요청`;
+              alert("⚠️ 기기에서 응답이 없습니다.\n\n[확인 사항]\n1. 스마트폰에서 AntiTheft 앱을 열고 [🚨 GPS 도난 방지 추적 시작] 버튼이 켜져 있는지 확인\n2. 앱 화면의 [📷 원격 카메라 실행 권한 (다른 앱 위에 표시)] 버튼을 눌러 권한을 허용했는지 확인\n3. 알림 권한이 허용되어 있는지 확인해 주세요.");
             }
 
             // B. 클라이언트측 ICE Candidate 수신

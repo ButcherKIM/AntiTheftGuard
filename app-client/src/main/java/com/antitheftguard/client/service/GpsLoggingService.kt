@@ -22,8 +22,12 @@ import com.antitheftguard.client.location.SmartIntervalCalculator
 import com.antitheftguard.core.firebase.FirestoreManager
 import com.antitheftguard.core.model.GpsPoint
 import com.google.android.gms.location.*
+import android.app.Notification
 import android.app.PendingIntent
+import android.media.AudioAttributes
+import android.media.RingtoneManager
 import android.os.Build
+import android.os.PowerManager
 import com.antitheftguard.client.ui.StreamActivity
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
@@ -35,6 +39,9 @@ class GpsLoggingService : Service() {
         private const val TAG = "GpsLoggingService"
         private const val NOTIFICATION_ID = 1
         private const val CHANNEL_ID = "gps_tracking"
+        @Volatile
+        var isRunning: Boolean = false
+            private set
     }
 
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -62,11 +69,16 @@ class GpsLoggingService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        isRunning = true
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, createNotification())
         
         deviceId = getSharedPreferences("antitheft", MODE_PRIVATE)
             .getString("device_id", "") ?: ""
+        if (deviceId.isEmpty()) {
+            val sanitizedModel = Build.MODEL.replace("[^a-zA-Z0-9_-]".toRegex(), "_").lowercase()
+            deviceId = "phone_${sanitizedModel}"
+        }
         
         // 초기 충전 상태 확인
         val batteryStatus = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
@@ -140,7 +152,7 @@ class GpsLoggingService : Service() {
     }
 
     private var commandListener: ListenerRegistration? = null
-    private var lastHandledTimestamp: Long = 0L
+    private var lastHandledRoomId: String = ""
 
     private fun collectBatches() {
         serviceScope.launch {
@@ -163,8 +175,13 @@ class GpsLoggingService : Service() {
     }
 
     private fun listenForRemoteCommands() {
-        if (deviceId.isEmpty()) return
+        if (deviceId.isEmpty()) {
+            val sanitizedModel = Build.MODEL.replace("[^a-zA-Z0-9_-]".toRegex(), "_").lowercase()
+            deviceId = "phone_${sanitizedModel}"
+        }
         val db = FirebaseFirestore.getInstance()
+        var isInitialSnapshot = true
+
         commandListener = db.collection("devices").document(deviceId)
             .collection("commands").document("stream")
             .addSnapshotListener { snapshot, e ->
@@ -173,12 +190,24 @@ class GpsLoggingService : Service() {
                 val command = snapshot.getString("command")
                 val timestamp = snapshot.getLong("timestamp") ?: 0L
                 val camera = snapshot.getString("camera") ?: "back"
-                val roomId = snapshot.getString("roomId") ?: "room_${System.currentTimeMillis()}"
+                val roomId = snapshot.getString("roomId") ?: ""
 
-                // "START_STREAM" 명령이고, 최근 60초 이내에 발행되었으며, 이전에 처리한 적 없는 새로운 명령인지 확인
                 val now = System.currentTimeMillis()
-                if (command == "START_STREAM" && timestamp > lastHandledTimestamp && (now - timestamp) < 60_000L) {
-                    lastHandledTimestamp = timestamp
+
+                if (isInitialSnapshot) {
+                    isInitialSnapshot = false
+                    lastHandledRoomId = roomId
+                    // 만약 서비스 시작 직전 60초 이내에 새로 요청된 명령이라면 즉시 처리
+                    if (command == "START_STREAM" && Math.abs(now - timestamp) < 60_000L && roomId.isNotEmpty()) {
+                        Log.d(TAG, "초기 스냅샷에서 최근 명령 감지 -> 실행: $roomId")
+                        triggerStreamActivity(camera, roomId)
+                    }
+                    return@addSnapshotListener
+                }
+
+                // 새로운 스트리밍 요청 감지
+                if (command == "START_STREAM" && roomId.isNotEmpty() && roomId != lastHandledRoomId) {
+                    lastHandledRoomId = roomId
                     Log.d(TAG, "원격 스트리밍 명령 수신! (카메라: $camera, 방: $roomId)")
                     triggerStreamActivity(camera, roomId)
                 }
@@ -186,42 +215,74 @@ class GpsLoggingService : Service() {
     }
 
     private fun triggerStreamActivity(camera: String, roomId: String) {
+        // 호스트 웹 대시보드에 기기 수신 응답 피드백
+        val db = FirebaseFirestore.getInstance()
+        if (deviceId.isNotEmpty()) {
+            db.collection("devices").document(deviceId)
+                .collection("commands").document("stream")
+                .update("status", "DEVICE_RECEIVED", "receivedAt", System.currentTimeMillis())
+        }
+
         val streamIntent = Intent(this, StreamActivity::class.java).apply {
             putExtra(StreamActivity.EXTRA_CAMERA, camera)
             putExtra(StreamActivity.EXTRA_ROOM_ID, roomId)
             putExtra(StreamActivity.EXTRA_DEVICE_ID, deviceId)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         }
 
         val pendingIntent = PendingIntent.getActivity(
             this,
-            0,
+            roomId.hashCode(),
             streamIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
         // 고우선순위 헤드업 알림 발송 (잠금화면 깨우기 FullScreenIntent 포함)
-        val channelId = "remote_stream_alert"
+        val channelId = "remote_stream_alert_v2"
         val notificationManager = getSystemService(NotificationManager::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(channelId, "원격 스트리밍 알림", NotificationManager.IMPORTANCE_HIGH).apply {
                 description = "원격 카메라 스트리밍 요청 알림"
                 enableVibration(true)
+                vibrationPattern = longArrayOf(0, 500, 200, 500)
+                setSound(
+                    RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION),
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_ALARM)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build()
+                )
+                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
             }
             notificationManager.createNotificationChannel(channel)
         }
 
         val notification = NotificationCompat.Builder(this, channelId)
-            .setContentTitle("🚨 원격 카메라 스트리밍 시작")
-            .setContentText("호스트 웹 요청에 따라 ${if (camera == "front") "전면" else "후면"} 카메라 전송을 시작합니다.")
+            .setContentTitle("🚨 원격 카메라 스트리밍 요청!")
+            .setContentText("웹 대시보드에서 ${if (camera == "front") "전면" else "후면"} 카메라 전송을 요청했습니다. 탭하여 확인하세요.")
             .setSmallIcon(android.R.drawable.ic_menu_camera)
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setFullScreenIntent(pendingIntent, true)
+            .setContentIntent(pendingIntent)
             .setAutoCancel(true)
+            .setVibrate(longArrayOf(0, 500, 200, 500))
+            .setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION))
             .build()
 
         notificationManager.notify(2001, notification)
+
+        // 화면 켜기 WakeLock 시도
+        try {
+            val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+            val wakeLock = powerManager.newWakeLock(
+                PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP,
+                "AntiTheft:StreamWakeLock"
+            )
+            wakeLock.acquire(15_000L)
+        } catch (e: Exception) {
+            Log.e(TAG, "WakeLock 획득 실패", e)
+        }
 
         // 액티비티 직접 기동 시도
         try {
@@ -262,6 +323,7 @@ class GpsLoggingService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        isRunning = false
         super.onDestroy()
         commandListener?.remove()
         fusedLocationClient.removeLocationUpdates(locationCallback)

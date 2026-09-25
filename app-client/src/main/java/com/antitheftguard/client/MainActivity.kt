@@ -19,6 +19,7 @@ import com.antitheftguard.client.service.GpsLoggingService
 import com.antitheftguard.client.util.AutoStartHelper
 import com.antitheftguard.core.firebase.FirestoreManager
 import com.antitheftguard.core.model.DeviceInfo
+import com.google.android.material.button.MaterialButton
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -45,6 +46,9 @@ class MainActivity : AppCompatActivity() {
         updatePermissionStatus()
     }
 
+    private var activityCommandListener: com.google.firebase.firestore.ListenerRegistration? = null
+    private var activityLastHandledRoomId: String = ""
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
@@ -54,12 +58,92 @@ class MainActivity : AppCompatActivity() {
         setupListeners()
         updateBatteryInfo()
         updatePermissionStatus()
+        updateServiceStatusUi()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        listenForCommandsInForeground()
     }
 
     override fun onResume() {
         super.onResume()
         updateBatteryInfo()
         updatePermissionStatus()
+        
+        // 이전에 추적을 켜두었는데 서비스가 종료되었던 상태라면 자동 재개
+        val shouldRun = getSharedPreferences("antitheft", Context.MODE_PRIVATE)
+            .getBoolean("is_service_running", false)
+        if (shouldRun && !GpsLoggingService.isRunning) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+                ContextCompat.startForegroundService(this, Intent(this, GpsLoggingService::class.java))
+            }
+        }
+        updateServiceStatusUi()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        activityCommandListener?.remove()
+        activityCommandListener = null
+    }
+
+    private fun updateServiceStatusUi() {
+        val isRunning = GpsLoggingService.isRunning
+        if (isRunning) {
+            binding.btnToggleService.text = "🔴 GPS 추적 서비스 중지"
+            binding.btnToggleService.setBackgroundColor(0xFFEF4444.toInt())
+            binding.tvDeviceStatus.text = "GPS 추적 상태: 동작 중 (실시간 기록 & 원격 카메라 대기)"
+            binding.tvDeviceStatus.setTextColor(0xFF34D399.toInt())
+        } else {
+            binding.btnToggleService.text = "🚨 GPS 도난 방지 추적 시작"
+            binding.btnToggleService.setBackgroundColor(0xFF10B981.toInt())
+            binding.tvDeviceStatus.text = "GPS 추적 상태: 중지됨 (버튼을 눌러 시작하세요)"
+            binding.tvDeviceStatus.setTextColor(0xFF94A3B8.toInt())
+        }
+    }
+
+    private fun listenForCommandsInForeground() {
+        val prefs = getSharedPreferences("antitheft", Context.MODE_PRIVATE)
+        val devId = prefs.getString("device_id", "") ?: return
+        if (devId.isEmpty()) return
+
+        val db = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+        var isInitial = true
+        activityCommandListener = db.collection("devices").document(devId)
+            .collection("commands").document("stream")
+            .addSnapshotListener { snapshot, e ->
+                if (e != null || snapshot == null || !snapshot.exists()) return@addSnapshotListener
+                val command = snapshot.getString("command")
+                val roomId = snapshot.getString("roomId") ?: ""
+                val camera = snapshot.getString("camera") ?: "back"
+                val timestamp = snapshot.getLong("timestamp") ?: 0L
+
+                val now = System.currentTimeMillis()
+                if (isInitial) {
+                    isInitial = false
+                    activityLastHandledRoomId = roomId
+                    if (command == "START_STREAM" && Math.abs(now - timestamp) < 30_000L && roomId.isNotEmpty()) {
+                        launchStreamDirectly(camera, roomId, devId)
+                    }
+                    return@addSnapshotListener
+                }
+
+                if (command == "START_STREAM" && roomId.isNotEmpty() && roomId != activityLastHandledRoomId) {
+                    activityLastHandledRoomId = roomId
+                    launchStreamDirectly(camera, roomId, devId)
+                }
+            }
+    }
+
+    private fun launchStreamDirectly(camera: String, roomId: String, devId: String) {
+        val streamIntent = Intent(this, com.antitheftguard.client.ui.StreamActivity::class.java).apply {
+            putExtra(com.antitheftguard.client.ui.StreamActivity.EXTRA_CAMERA, camera)
+            putExtra(com.antitheftguard.client.ui.StreamActivity.EXTRA_ROOM_ID, roomId)
+            putExtra(com.antitheftguard.client.ui.StreamActivity.EXTRA_DEVICE_ID, devId)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        }
+        startActivity(streamIntent)
     }
 
     private fun initDeviceId() {
@@ -124,12 +208,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun toggleGpsService() {
-        val isServiceRunning = getSharedPreferences("antitheft", Context.MODE_PRIVATE)
-            .getBoolean("is_service_running", false)
-
+        val isRunning = GpsLoggingService.isRunning
         val serviceIntent = Intent(this, GpsLoggingService::class.java)
 
-        if (!isServiceRunning) {
+        if (!isRunning) {
             // 시작
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) 
                 != PackageManager.PERMISSION_GRANTED) {
@@ -144,7 +226,7 @@ class MainActivity : AppCompatActivity() {
 
             binding.btnToggleService.text = "🔴 GPS 추적 서비스 중지"
             binding.btnToggleService.setBackgroundColor(0xFFEF4444.toInt())
-            binding.tvDeviceStatus.text = "GPS 추적 상태: 동작 중 (실시간 기록)"
+            binding.tvDeviceStatus.text = "GPS 추적 상태: 동작 중 (실시간 기록 & 원격 카메라 대기)"
             binding.tvDeviceStatus.setTextColor(0xFF34D399.toInt())
             Toast.makeText(this, "도난 방지 추적이 시작되었습니다.", Toast.LENGTH_SHORT).show()
         } else {
@@ -155,7 +237,7 @@ class MainActivity : AppCompatActivity() {
 
             binding.btnToggleService.text = "🚨 GPS 도난 방지 추적 시작"
             binding.btnToggleService.setBackgroundColor(0xFF10B981.toInt())
-            binding.tvDeviceStatus.text = "GPS 추적 상태: 중지됨"
+            binding.tvDeviceStatus.text = "GPS 추적 상태: 중지됨 (버튼을 눌러 시작하세요)"
             binding.tvDeviceStatus.setTextColor(0xFF94A3B8.toInt())
             Toast.makeText(this, "추적 서비스가 중지되었습니다.", Toast.LENGTH_SHORT).show()
         }
@@ -218,13 +300,37 @@ class MainActivity : AppCompatActivity() {
         val fineLocation = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         val camera = ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
         val mic = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        val notif = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+        } else true
+        val overlay = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            Settings.canDrawOverlays(this)
+        } else true
 
-        if (fineLocation && camera && mic) {
-            binding.tvPermissionsStatus.text = "필수 권한: 모두 허용됨 ✅"
+        if (fineLocation && camera && mic && notif && overlay) {
+            binding.tvPermissionsStatus.text = "모든 필수 권한: 완벽하게 허용됨 ✅"
             binding.tvPermissionsStatus.setTextColor(0xFF34D399.toInt())
         } else {
-            binding.tvPermissionsStatus.text = "필수 권한: 확인 및 승인 필요 ⚠️"
+            val missing = mutableListOf<String>()
+            if (!fineLocation) missing.add("위치")
+            if (!camera) missing.add("카메라")
+            if (!mic) missing.add("마이크")
+            if (!notif) missing.add("알림")
+            if (!overlay) missing.add("다른 앱 위에 표시")
+
+            binding.tvPermissionsStatus.text = "권한 필요 (${missing.joinToString(", ")}) ⚠️"
             binding.tvPermissionsStatus.setTextColor(0xFFF59E0B.toInt())
+        }
+
+        // Overlay 버튼 상태 시각화
+        if (overlay) {
+            binding.btnOverlayPermission.text = "✅ 다른 앱 위에 표시 권한 허용됨"
+            binding.btnOverlayPermission.setTextColor(0xFF34D399.toInt())
+            (binding.btnOverlayPermission as? MaterialButton)?.strokeColor = android.content.res.ColorStateList.valueOf(0xFF34D399.toInt())
+        } else {
+            binding.btnOverlayPermission.text = "⚠️ 다른 앱 위에 표시 허용하기 (원격 카메라 필수)"
+            binding.btnOverlayPermission.setTextColor(0xFFF59E0B.toInt())
+            (binding.btnOverlayPermission as? MaterialButton)?.strokeColor = android.content.res.ColorStateList.valueOf(0xFFF59E0B.toInt())
         }
     }
 
