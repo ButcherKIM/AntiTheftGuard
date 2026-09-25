@@ -413,21 +413,40 @@
       100% { transform: scale(1.8); opacity: 0; }
     }
 
-    /* Responsive */
+    /* Responsive (Mobile & Tablet) */
     @media (max-width: 900px) {
       body {
         height: auto;
-        overflow: auto;
+        min-height: 100vh;
+        overflow-x: hidden;
+        overflow-y: auto;
       }
       main {
         flex-direction: column;
         height: auto;
+        min-height: auto;
+        display: block; /* prevents flexbox 0px height collapse */
       }
       #map-container {
-        height: 480px;
+        display: block;
+        width: 100%;
+        height: 380px;
+        min-height: 380px;
+        position: relative;
+        flex: none;
+      }
+      #map {
+        width: 100%;
+        height: 380px;
+        min-height: 380px;
+        background: #111827;
       }
       .sidebar {
         width: 100%;
+        height: auto;
+        overflow: visible;
+        border-left: none;
+        border-top: 1px solid var(--border);
       }
     }
   </style>
@@ -629,6 +648,17 @@
       attribution: '&copy; OpenStreetMap contributors'
     }).addTo(map);
 
+    // 모바일 브라우저 렌더링 시 회색 타일 방지 및 크기 보정
+    function fixMapSize() {
+      if (typeof map !== 'undefined' && map) {
+        map.invalidateSize();
+      }
+    }
+    window.addEventListener('resize', fixMapSize);
+    window.addEventListener('orientationchange', fixMapSize);
+    setTimeout(fixMapSize, 250);
+    setTimeout(fixMapSize, 800);
+
     let phoneMarker = null;
     let accuracyCircle = null;
     let polyline = L.polyline([], { color: '#3b82f6', weight: 4, opacity: 0.85 }).addTo(map);
@@ -660,6 +690,7 @@
         }).addTo(map);
         map.setView(latlng, 17);
         hasAutoCentered = true;
+        fixMapSize();
       } else {
         phoneMarker.setLatLng(latlng);
         accuracyCircle.setLatLng(latlng);
@@ -668,11 +699,13 @@
         if (!hasAutoCentered) {
           map.setView(latlng, 17);
           hasAutoCentered = true;
+          fixMapSize();
         }
       }
     }
 
     document.getElementById('btn-recenter').addEventListener('click', () => {
+      fixMapSize();
       if (phoneMarker) {
         map.setView(phoneMarker.getLatLng(), 17);
       } else {
@@ -1047,18 +1080,22 @@
             // A. Offer 수신 확인
             if (!hasReceivedOffer) {
               // 폰에서 명령을 수신했는지 commands/stream status 확인
-              if (commandPollCount % 2 === 0) {
-                try {
-                  const cmdRes = await fetch(`${REST_BASE}/devices/${deviceId}/commands/stream`);
-                  if (cmdRes.ok) {
-                    const cmdDoc = await cmdRes.json();
-                    const parsedCmd = parseFirestoreDoc(cmdDoc);
-                    if (parsedCmd && parsedCmd.status === "DEVICE_RECEIVED") {
+              try {
+                const cmdRes = await fetch(`${REST_BASE}/devices/${deviceId}/commands/stream`);
+                if (cmdRes.ok) {
+                  const cmdDoc = await cmdRes.json();
+                  const parsedCmd = parseFirestoreDoc(cmdDoc);
+                  if (parsedCmd) {
+                    if (parsedCmd.status === "OFFER_SENT") {
+                      btnStart.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 영상 전송 준비 완료! 채널 협상 중...`;
+                    } else if (parsedCmd.status === "STREAM_ACTIVITY_STARTED") {
+                      btnStart.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 카메라 구동 시작! 영상 생성 중...`;
+                    } else if (parsedCmd.status === "DEVICE_RECEIVED") {
                       btnStart.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 기기 신호 수신 확인! 카메라 여는 중...`;
                     }
                   }
-                } catch(e) {}
-              }
+                }
+              } catch(e) {}
 
               const roomRes = await fetch(`${REST_BASE}/devices/${deviceId}/signaling/${roomId}`);
               if (roomRes.ok) {
@@ -1089,7 +1126,7 @@
               }
             }
 
-            if (!hasReceivedOffer && commandPollCount > 35) {
+            if (!hasReceivedOffer && commandPollCount > 45) {
               clearInterval(signalingPollInterval);
               signalingPollInterval = null;
               btnStart.disabled = false;
@@ -1124,7 +1161,7 @@
           } catch (pollErr) {
             console.warn("Signaling poll error:", pollErr);
           }
-        }, 1000);
+        }, 700);
 
       } catch (e) {
         console.error("Signaling error:", e);

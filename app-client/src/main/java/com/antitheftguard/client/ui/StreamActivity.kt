@@ -1,5 +1,6 @@
 package com.antitheftguard.client.ui
 
+import android.app.NotificationManager
 import android.os.Build
 import android.os.Bundle
 import android.os.CountDownTimer
@@ -46,6 +47,14 @@ class StreamActivity : AppCompatActivity(), PeerConnectionListener {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_stream)
 
+        // 풀스크린 인텐트 알림 즉시 취소 (사용자 화면/상태바에 알림 흔적 제거)
+        try {
+            val notificationManager = getSystemService(NotificationManager::class.java)
+            notificationManager.cancel(2001)
+        } catch (e: Exception) {
+            Log.w(TAG, "Notification cancel error", e)
+        }
+
         // 완전 투명 및 터치 관통 설정 (알림화면 및 UI 노출 방지)
         window.addFlags(
             WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
@@ -68,6 +77,13 @@ class StreamActivity : AppCompatActivity(), PeerConnectionListener {
         currentCameraType = intent.getStringExtra(EXTRA_CAMERA) ?: "back"
         roomId = intent.getStringExtra(EXTRA_ROOM_ID) ?: "room_${System.currentTimeMillis()}"
         deviceId = intent.getStringExtra(EXTRA_DEVICE_ID) ?: getSharedPreferences("antitheft", MODE_PRIVATE).getString("device_id", "") ?: ""
+
+        // 웹 대시보드에 StreamActivity 구동 확인 통보
+        if (deviceId.isNotEmpty()) {
+            db.collection("devices").document(deviceId)
+                .collection("commands").document("stream")
+                .update("status", "STREAM_ACTIVITY_STARTED")
+        }
 
         val isFront = currentCameraType == "front"
 
@@ -153,6 +169,9 @@ class StreamActivity : AppCompatActivity(), PeerConnectionListener {
                         "createdAt" to System.currentTimeMillis()
                     )).addOnSuccessListener {
                         Log.d(TAG, "Offer 등록 완료: $roomId")
+                        db.collection("devices").document(deviceId)
+                            .collection("commands").document("stream")
+                            .update("status", "OFFER_SENT")
                     }
 
                     // 호스트의 Answer 대기
@@ -227,6 +246,11 @@ class StreamActivity : AppCompatActivity(), PeerConnectionListener {
         answerListener?.remove()
         candidateListener?.remove()
         commandListener?.remove()
+        if (deviceId.isNotEmpty()) {
+            db.collection("devices").document(deviceId)
+                .collection("commands").document("stream")
+                .update("status", "STREAM_FINISHED")
+        }
         try {
             peerConnectionManager.close()
         } catch (e: Exception) {
