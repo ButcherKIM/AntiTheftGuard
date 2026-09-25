@@ -745,7 +745,7 @@
       }, 3000);
     }
 
-    // 실시간 수신 시간 포맷팅 함수 (초 단위 경과 시간 표시)
+    // 실시간 수신 시간 포맷팅 함수 (두 줄 표시: 1줄 시간, 2줄 경과시간)
     let lastRecordedTimestamp = 0;
     function formatLastSeen(ts) {
       if (!ts) return "--";
@@ -753,16 +753,20 @@
       const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
       const diffSec = Math.max(0, Math.floor((Date.now() - ts) / 1000));
 
-      if (diffSec < 10) return `${timeStr} (방금 전)`;
-      if (diffSec < 60) return `${timeStr} (${diffSec}초 전)`;
-      if (diffSec < 3600) return `${timeStr} (${Math.floor(diffSec / 60)}분 전)`;
-      return `${timeStr} (${Math.floor(diffSec / 3600)}시간 전)`;
+      let agoStr = "";
+      if (diffSec < 10) agoStr = "방금 전";
+      else if (diffSec < 60) agoStr = `${diffSec}초 전`;
+      else if (diffSec < 3600) agoStr = `${Math.floor(diffSec / 60)}분 전`;
+      else agoStr = `${Math.floor(diffSec / 3600)}시간 전`;
+
+      return `<div style="font-size: 1.05rem; font-weight: 700; line-height: 1.2;">${timeStr}</div>` +
+             `<div style="font-size: 0.8rem; color: #94a3b8; font-weight: 500; margin-top: 3px;">(${agoStr})</div>`;
     }
 
     // 1초마다 '방금 전 / N초 전' 상대 시간을 부드럽게 갱신
     setInterval(() => {
       if (lastRecordedTimestamp > 0) {
-        document.getElementById('val-last-seen').innerText = formatLastSeen(lastRecordedTimestamp);
+        document.getElementById('val-last-seen').innerHTML = formatLastSeen(lastRecordedTimestamp);
       }
     }, 1000);
 
@@ -884,7 +888,7 @@
 
         if (newestTimestamp > 0) {
           lastRecordedTimestamp = newestTimestamp;
-          document.getElementById('val-last-seen').innerText = formatLastSeen(newestTimestamp);
+          document.getElementById('val-last-seen').innerHTML = formatLastSeen(newestTimestamp);
         }
       } catch (err) {
         console.error("Sync error:", err);
