@@ -555,9 +555,10 @@
       attributionControl: false
     }).setView([37.5665, 126.9780], 15); // 서울 기본 좌표
 
-    // OpenStreetMap Dark Theme Tiles (CartoDB Dark Matter)
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-      maxZoom: 19
+    // Standard OpenStreetMap Tiles (100% Free, No API Key Required)
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap contributors'
     }).addTo(map);
 
     let phoneMarker = null;
