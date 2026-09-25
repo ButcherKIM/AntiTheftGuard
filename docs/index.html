@@ -647,42 +647,61 @@
       if (deviceUnsubscribe) deviceUnsubscribe();
       if (locationUnsubscribe) locationUnsubscribe();
 
-      document.getElementById('device-state-tag').innerHTML = `추적 대상: <strong style="color: #60a5fa">${deviceId}</strong>`;
+      document.getElementById('device-state-tag').innerHTML = `추적 대상: <strong style="color: #60a5fa">${deviceId}</strong> (연결 중...)`;
 
-      // 1) Observe Device Document (battery, lastSeen, etc.)
-      deviceUnsubscribe = db.collection("devices").document(deviceId).onSnapshot(doc => {
-        if (doc.exists) {
-          const data = doc.data();
-          if (data.batteryLevel !== undefined) {
-            document.getElementById('val-battery').innerText = `${data.batteryLevel}%`;
-            document.getElementById('val-battery-bar').style.width = `${data.batteryLevel}%`;
-          }
-          if (data.lastSeen) {
-            const date = new Date(data.lastSeen);
-            document.getElementById('val-last-seen').innerText = date.toLocaleTimeString();
-          }
+      function renderDeviceData(data) {
+        if (!data) return;
+        if (data.batteryLevel !== undefined) {
+          document.getElementById('val-battery').innerText = `${data.batteryLevel}%`;
+          document.getElementById('val-battery-bar').style.width = `${data.batteryLevel}%`;
         }
-      });
+        if (data.lastSeen) {
+          const date = new Date(data.lastSeen);
+          document.getElementById('val-last-seen').innerText = date.toLocaleTimeString();
+        }
+        if (data.lastLatitude && data.lastLongitude) {
+          updateMapLocation(data.lastLatitude, data.lastLongitude, data.lastAccuracy);
+          document.getElementById('val-speed').innerText = `${((data.lastSpeed || 0) * 3.6).toFixed(1)} km/h`;
+          document.getElementById('val-accuracy').innerText = `±${Math.round(data.lastAccuracy || 0)} m`;
+        }
+        document.getElementById('device-state-tag').innerHTML = `추적 대상: <strong style="color: #60a5fa">${deviceId}</strong> (정상 수신 중)`;
+      }
 
-      // 2) Observe Batched Locations
-      locationUnsubscribe = db.collection("devices").document(deviceId)
-        .collection("gps_batches")
-        .orderBy("startTime", "desc")
-        .limit(10)
-        .onSnapshot(snapshot => {
-          if (!snapshot.empty) {
-            const batches = snapshot.docs.map(d => d.data());
-            batches.reverse().forEach(batch => {
-              if (batch.points && Array.isArray(batch.points)) {
-                batch.points.forEach(pt => {
-                  updateMapLocation(pt.latitude, pt.longitude, pt.accuracy);
-                  document.getElementById('val-speed').innerText = `${((pt.speed || 0) * 3.6).toFixed(1)} km/h`;
-                  document.getElementById('val-accuracy').innerText = `±${Math.round(pt.accuracy || 0)} m`;
-                });
-              }
+      function renderBatches(snapshot) {
+        if (!snapshot || snapshot.empty) return;
+        const batches = snapshot.docs.map(d => d.data());
+        batches.forEach(batch => {
+          if (batch.points && Array.isArray(batch.points)) {
+            batch.points.forEach(pt => {
+              updateMapLocation(pt.latitude, pt.longitude, pt.accuracy);
+              document.getElementById('val-speed').innerText = `${((pt.speed || 0) * 3.6).toFixed(1)} km/h`;
+              document.getElementById('val-accuracy').innerText = `±${Math.round(pt.accuracy || 0)} m`;
             });
           }
         });
+      }
+
+      // 1) 즉시 단발성 가져오기 (Direct Get)
+      db.collection("devices").document(deviceId).get()
+        .then(doc => {
+          if (doc.exists) renderDeviceData(doc.data());
+        })
+        .catch(err => console.warn("Direct device get error:", err));
+
+      db.collection("devices").document(deviceId).collection("gps_batches").get()
+        .then(snapshot => renderBatches(snapshot))
+        .catch(err => console.warn("Direct batches get error:", err));
+
+      // 2) 실시간 리스너 (onSnapshot)
+      deviceUnsubscribe = db.collection("devices").document(deviceId).onSnapshot(doc => {
+        if (doc && doc.exists) renderDeviceData(doc.data());
+      }, err => console.warn("Device snapshot error:", err));
+
+      locationUnsubscribe = db.collection("devices").document(deviceId)
+        .collection("gps_batches")
+        .onSnapshot(snapshot => {
+          renderBatches(snapshot);
+        }, err => console.warn("Batch snapshot error:", err));
     }
 
     // --- 4. WebRTC Video / Audio Streaming ---
