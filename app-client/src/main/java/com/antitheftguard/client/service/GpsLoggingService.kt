@@ -230,53 +230,11 @@ class GpsLoggingService : Service() {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         }
 
-        val pendingIntent = PendingIntent.getActivity(
-            this,
-            roomId.hashCode(),
-            streamIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        // 고우선순위 헤드업 알림 발송 (잠금화면 깨우기 FullScreenIntent 포함)
-        val channelId = "remote_stream_alert_v2"
-        val notificationManager = getSystemService(NotificationManager::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(channelId, "원격 스트리밍 알림", NotificationManager.IMPORTANCE_HIGH).apply {
-                description = "원격 카메라 스트리밍 요청 알림"
-                enableVibration(true)
-                vibrationPattern = longArrayOf(0, 500, 200, 500)
-                setSound(
-                    RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION),
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_ALARM)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .build()
-                )
-                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
-            }
-            notificationManager.createNotificationChannel(channel)
-        }
-
-        val notification = NotificationCompat.Builder(this, channelId)
-            .setContentTitle("🚨 원격 카메라 스트리밍 요청!")
-            .setContentText("웹 대시보드에서 ${if (camera == "front") "전면" else "후면"} 카메라 전송을 요청했습니다. 탭하여 확인하세요.")
-            .setSmallIcon(android.R.drawable.ic_menu_camera)
-            .setPriority(NotificationCompat.PRIORITY_MAX)
-            .setCategory(NotificationCompat.CATEGORY_ALARM)
-            .setFullScreenIntent(pendingIntent, true)
-            .setContentIntent(pendingIntent)
-            .setAutoCancel(true)
-            .setVibrate(longArrayOf(0, 500, 200, 500))
-            .setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION))
-            .build()
-
-        notificationManager.notify(2001, notification)
-
-        // 화면 켜기 WakeLock 시도
+        // CPU 활성 유지를 위한 WakeLock 획득 (화면 알림 없이 백그라운드 구동)
         try {
             val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
             val wakeLock = powerManager.newWakeLock(
-                PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP,
+                PowerManager.PARTIAL_WAKE_LOCK,
                 "AntiTheft:StreamWakeLock"
             )
             wakeLock.acquire(15_000L)

@@ -140,6 +140,45 @@ class PeerConnectionManager(
         return peerConnectionFactory?.createVideoTrack("video0", videoSource)
     }
 
+    fun switchCamera(preferFront: Boolean? = null, callback: ((Boolean) -> Unit)? = null) {
+        val capturer = activeCapturer as? CameraVideoCapturer ?: run {
+            Log.e(TAG, "현재 활성화된 카메라 캡처러가 없습니다.")
+            callback?.invoke(false)
+            return
+        }
+
+        val enumerator = Camera2Enumerator(context)
+        val targetName = if (preferFront != null) {
+            enumerator.deviceNames.firstOrNull { name ->
+                if (preferFront) enumerator.isFrontFacing(name) else enumerator.isBackFacing(name)
+            }
+        } else null
+
+        if (targetName != null) {
+            capturer.switchCamera(object : CameraVideoCapturer.CameraSwitchHandler {
+                override fun onCameraSwitchDone(isFrontCamera: Boolean) {
+                    Log.d(TAG, "지정 카메라 전환 성공: $targetName (전면: $isFrontCamera)")
+                    callback?.invoke(true)
+                }
+                override fun onCameraSwitchError(errorDescription: String?) {
+                    Log.e(TAG, "카메라 전환 실패: $errorDescription")
+                    callback?.invoke(false)
+                }
+            }, targetName)
+        } else {
+            capturer.switchCamera(object : CameraVideoCapturer.CameraSwitchHandler {
+                override fun onCameraSwitchDone(isFrontCamera: Boolean) {
+                    Log.d(TAG, "카메라 토글 전환 성공 (전면: $isFrontCamera)")
+                    callback?.invoke(true)
+                }
+                override fun onCameraSwitchError(errorDescription: String?) {
+                    Log.e(TAG, "카메라 토글 실패: $errorDescription")
+                    callback?.invoke(false)
+                }
+            })
+        }
+    }
+
     fun stopCapture() {
         try {
             activeCapturer?.stopCapture()

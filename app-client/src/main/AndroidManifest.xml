@@ -40,7 +40,7 @@
             android:exported="false"
             android:showWhenLocked="true"
             android:turnScreenOn="true"
-            android:theme="@style/Theme.AntiTheftGuard" />
+            android:theme="@style/Theme.Transparent" />
         
         <service 
             android:name=".service.GpsLoggingService"

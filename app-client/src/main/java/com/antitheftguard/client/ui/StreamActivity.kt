@@ -5,9 +5,8 @@ import android.os.Bundle
 import android.os.CountDownTimer
 import android.util.Log
 import android.view.WindowManager
-import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import com.antitheftguard.client.databinding.ActivityStreamBinding
+import com.antitheftguard.client.R
 import com.antitheftguard.core.webrtc.CameraHelper
 import com.antitheftguard.core.webrtc.PeerConnectionListener
 import com.antitheftguard.core.webrtc.PeerConnectionManager
@@ -20,7 +19,8 @@ import org.webrtc.SessionDescription
 
 /**
  * 원격 카메라 스트리밍 송출 전용 액티비티.
- * 잠금화면 위에서도 화면을 켜고 전면/후면 카메라를 480p로 WebRTC P2P 스트리밍합니다.
+ * 알림화면이나 팝업 UI 없이 투명 모드로 실행되며, 호스트 웹의 요청에 따라
+ * 실시간으로 전면/후면 카메라를 즉시 전환(switchCamera)할 수 있습니다.
  */
 class StreamActivity : AppCompatActivity(), PeerConnectionListener {
     companion object {
@@ -30,24 +30,30 @@ class StreamActivity : AppCompatActivity(), PeerConnectionListener {
         const val EXTRA_DEVICE_ID = "extra_device_id"
     }
 
-    private lateinit var binding: ActivityStreamBinding
     private lateinit var peerConnectionManager: PeerConnectionManager
     private val db = FirebaseFirestore.getInstance()
 
     private var roomId: String = ""
     private var deviceId: String = ""
-    private var cameraType: String = "back"
+    private var currentCameraType: String = "back"
     private var answerListener: ListenerRegistration? = null
     private var candidateListener: ListenerRegistration? = null
+    private var commandListener: ListenerRegistration? = null
     private var countDownTimer: CountDownTimer? = null
     private var isStreamingActive = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        binding = ActivityStreamBinding.inflate(layoutInflater)
-        setContentView(binding.root)
+        setContentView(R.layout.activity_stream)
 
-        // 화면 켜기 및 잠금 화면 위 표시 (Android 11+ 지원)
+        // 완전 투명 및 터치 관통 설정 (알림화면 및 UI 노출 방지)
+        window.addFlags(
+            WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+            WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+        )
+
+        // 화면 켜기 및 잠금 화면 위 동작 (Android 11+ 지원)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
             setShowWhenLocked(true)
             setTurnScreenOn(true)
@@ -58,37 +64,50 @@ class StreamActivity : AppCompatActivity(), PeerConnectionListener {
                 WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
             )
         }
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
-        cameraType = intent.getStringExtra(EXTRA_CAMERA) ?: "back"
+        currentCameraType = intent.getStringExtra(EXTRA_CAMERA) ?: "back"
         roomId = intent.getStringExtra(EXTRA_ROOM_ID) ?: "room_${System.currentTimeMillis()}"
         deviceId = intent.getStringExtra(EXTRA_DEVICE_ID) ?: getSharedPreferences("antitheft", MODE_PRIVATE).getString("device_id", "") ?: ""
 
-        val isFront = cameraType == "front"
-        binding.tvCameraType.text = if (isFront) "🤳 전면 카메라 전송 중" else "📷 후면 카메라 전송 중"
+        val isFront = currentCameraType == "front"
 
-        setupListeners()
         startCountDown()
         startWebRtcStreaming(isFront)
+        listenForStreamCommands()
     }
 
-    private fun setupListeners() {
-        binding.btnStopStream.setOnClickListener {
-            stopStreamingAndFinish()
-        }
+    private fun listenForStreamCommands() {
+        if (deviceId.isEmpty()) return
+        commandListener = db.collection("devices").document(deviceId)
+            .collection("commands").document("stream")
+            .addSnapshotListener { snapshot, e ->
+                if (e != null || snapshot == null || !snapshot.exists()) return@addSnapshotListener
+
+                val cmd = snapshot.getString("command")
+                if (cmd == "STOP_STREAM") {
+                    Log.d(TAG, "웹으로부터 STOP_STREAM 명령 수신 -> 스트리밍 종료")
+                    stopStreamingAndFinish()
+                    return@addSnapshotListener
+                }
+
+                val requestedCamera = snapshot.getString("camera")
+                if (!requestedCamera.isNullOrEmpty() && requestedCamera != currentCameraType) {
+                    Log.d(TAG, "실시간 카메라 변경 요청 감지: $currentCameraType -> $requestedCamera")
+                    currentCameraType = requestedCamera
+                    val preferFront = requestedCamera == "front"
+                    peerConnectionManager.switchCamera(preferFront) { success ->
+                        Log.d(TAG, "카메라 실시간 전환 결과: $success")
+                    }
+                }
+            }
     }
 
     private fun startCountDown() {
         countDownTimer = object : CountDownTimer(180_000L, 1000L) {
-            override fun onTick(millisUntilFinished: Long) {
-                val totalSeconds = millisUntilFinished / 1000
-                val minutes = totalSeconds / 60
-                val seconds = totalSeconds % 60
-                binding.tvTimer.text = String.format("%02d:%02d", minutes, seconds)
-            }
+            override fun onTick(millisUntilFinished: Long) {}
 
             override fun onFinish() {
-                Toast.makeText(this@StreamActivity, "스트리밍 3분이 종료되었습니다.", Toast.LENGTH_SHORT).show()
+                Log.d(TAG, "스트리밍 3분 만료 종료")
                 stopStreamingAndFinish()
             }
         }.start()
@@ -106,7 +125,7 @@ class StreamActivity : AppCompatActivity(), PeerConnectionListener {
                 val videoTrack = peerConnectionManager.createVideoTrack(capturer)
                 if (videoTrack != null) {
                     peerConnectionManager.addTrack(videoTrack)
-                    Log.d(TAG, "비디오 트랙 추가 완료")
+                    Log.d(TAG, "비디오 트랙 추가 완료 ($currentCameraType)")
                 }
             } else {
                 Log.e(TAG, "카메라를 초기화할 수 없습니다.")
@@ -130,7 +149,7 @@ class StreamActivity : AppCompatActivity(), PeerConnectionListener {
 
                     roomRef.set(mapOf(
                         "offer" to sdp.description,
-                        "camera" to cameraType,
+                        "camera" to currentCameraType,
                         "createdAt" to System.currentTimeMillis()
                     )).addOnSuccessListener {
                         Log.d(TAG, "Offer 등록 완료: $roomId")
@@ -144,7 +163,6 @@ class StreamActivity : AppCompatActivity(), PeerConnectionListener {
             }
         } catch (e: Exception) {
             Log.e(TAG, "WebRTC 시작 실패", e)
-            Toast.makeText(this, "스트리밍 초기화 오류: ${e.message}", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -208,6 +226,7 @@ class StreamActivity : AppCompatActivity(), PeerConnectionListener {
         countDownTimer?.cancel()
         answerListener?.remove()
         candidateListener?.remove()
+        commandListener?.remove()
         try {
             peerConnectionManager.close()
         } catch (e: Exception) {

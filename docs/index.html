@@ -528,15 +528,20 @@
             <div class="stream-timer" id="stream-timer">03:00</div>
           </div>
 
-          <!-- Camera Selection Dropdown -->
+          <!-- Camera Selection Dropdown & Live Switch Button -->
           <div style="display: flex; flex-direction: column; gap: 6px;">
             <label style="font-size: 0.8rem; color: var(--text-muted); font-weight: 600;">
-              <i class="fa-solid fa-camera"></i> 촬영 카메라 선택:
+              <i class="fa-solid fa-camera"></i> 촬영 카메라 선택 (전송 중 실시간 전환 가능):
             </label>
-            <select id="select-camera" style="width: 100%; padding: 11px 14px; background: var(--bg-dark); color: var(--text-main); border: 1px solid var(--border); border-radius: 8px; font-size: 0.9rem; font-weight: 600; outline: none; cursor: pointer;">
-              <option value="back">📷 후면 카메라 (기본)</option>
-              <option value="front">🤳 전면 카메라 (셀카)</option>
-            </select>
+            <div style="display: flex; gap: 8px;">
+              <select id="select-camera" style="flex: 1; padding: 11px 14px; background: var(--bg-dark); color: var(--text-main); border: 1px solid var(--border); border-radius: 8px; font-size: 0.9rem; font-weight: 600; outline: none; cursor: pointer;">
+                <option value="back">📷 후면 카메라 (기본)</option>
+                <option value="front">🤳 전면 카메라 (셀카)</option>
+              </select>
+              <button id="btn-toggle-camera" type="button" style="display: none; padding: 10px 14px; background: rgba(59, 130, 246, 0.15); border: 1px solid var(--primary); color: #60a5fa; border-radius: 8px; font-size: 0.85rem; font-weight: 600; cursor: pointer; white-space: nowrap; align-items: center; gap: 6px;">
+                <i class="fa-solid fa-camera-rotate"></i> 전/후면 전환
+              </button>
+            </div>
           </div>
 
           <!-- Action Buttons -->
@@ -967,6 +972,7 @@
             btnStart.style.display = 'none';
             btnStop.style.display = 'flex';
             btnRecord.style.display = 'flex';
+            document.getElementById('btn-toggle-camera').style.display = 'inline-flex';
             startStreamTimer(180); // 3분 타이머 시작
           }
         };
@@ -1132,6 +1138,18 @@
         peerConnection = null;
       }
 
+      if (currentDeviceId) {
+        fetch(`${REST_BASE}/devices/${currentDeviceId}/commands/stream?updateMask.fieldPaths=command`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fields: {
+              command: { stringValue: "STOP_STREAM" }
+            }
+          })
+        }).catch(e => console.warn("STOP_STREAM error:", e));
+      }
+
       remoteVideo.srcObject = null;
       placeholder.style.display = 'flex';
       liveBadge.style.display = 'none';
@@ -1141,7 +1159,35 @@
       btnStart.innerHTML = `<i class="fa-solid fa-tower-broadcast"></i> 3분간 실시간 스트리밍 요청`;
       btnStop.style.display = 'none';
       btnRecord.style.display = 'none';
+      document.getElementById('btn-toggle-camera').style.display = 'none';
     }
+
+    // 실시간 카메라 옵션 전환 (스트리밍 중 즉각 전/후면 전환 반영)
+    document.getElementById('select-camera').addEventListener('change', async (e) => {
+      const newCam = e.target.value;
+      if (peerConnection && currentDeviceId) {
+        try {
+          await fetch(`${REST_BASE}/devices/${currentDeviceId}/commands/stream?updateMask.fieldPaths=camera`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              fields: {
+                camera: { stringValue: newCam }
+              }
+            })
+          });
+          console.log("카메라 실시간 전환 명령 전송:", newCam);
+        } catch (err) {
+          console.warn("카메라 전환 실패:", err);
+        }
+      }
+    });
+
+    document.getElementById('btn-toggle-camera').addEventListener('click', () => {
+      const selectCam = document.getElementById('select-camera');
+      selectCam.value = selectCam.value === 'front' ? 'back' : 'front';
+      selectCam.dispatchEvent(new Event('change'));
+    });
 
     // --- 5. Stream Recording & Download ---
     btnRecord.addEventListener('click', () => {
