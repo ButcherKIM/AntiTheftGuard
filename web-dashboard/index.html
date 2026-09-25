@@ -86,11 +86,17 @@
       background: #064e3b;
       color: #34d399;
       font-weight: 600;
+      transition: all 0.3s;
     }
 
     .status-badge.disconnected {
       background: #7f1d1d;
       color: #f87171;
+    }
+
+    .status-badge.connecting {
+      background: #1e3a8a;
+      color: #93c5fd;
     }
 
     .status-dot {
@@ -130,6 +136,7 @@
       z-index: 900;
       display: flex;
       gap: 8px;
+      flex-wrap: wrap;
     }
 
     .map-btn {
@@ -378,6 +385,34 @@
       background: #334155;
     }
 
+    /* Pulse beacon for phone marker */
+    .beacon-marker {
+      position: relative;
+    }
+    .beacon-dot {
+      width: 18px;
+      height: 18px;
+      background: #ef4444;
+      border: 3px solid #ffffff;
+      border-radius: 50%;
+      box-shadow: 0 0 16px 4px #ef4444;
+    }
+    .beacon-ring {
+      position: absolute;
+      top: -9px;
+      left: -9px;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      border: 2px solid #ef4444;
+      animation: beacon-wave 2s infinite ease-out;
+      pointer-events: none;
+    }
+    @keyframes beacon-wave {
+      0% { transform: scale(0.5); opacity: 1; }
+      100% { transform: scale(1.8); opacity: 0; }
+    }
+
     /* Responsive */
     @media (max-width: 900px) {
       body {
@@ -389,7 +424,7 @@
         height: auto;
       }
       #map-container {
-        height: 450px;
+        height: 480px;
       }
       .sidebar {
         width: 100%;
@@ -406,9 +441,9 @@
       <span>AntiTheft Guard <span style="font-size: 0.8rem; font-weight: 500; color: var(--text-muted);">HOST WEB</span></span>
     </div>
     <div class="header-actions">
-      <div id="firebase-status" class="status-badge disconnected">
+      <div id="firebase-status" class="status-badge connecting">
         <span class="status-dot"></span>
-        <span id="firebase-status-text">Firebase 연결 중...</span>
+        <span id="firebase-status-text">기기 검색 중...</span>
       </div>
     </div>
   </header>
@@ -421,6 +456,7 @@
       <div class="map-controls">
         <button class="map-btn" id="btn-recenter"><i class="fa-solid fa-crosshairs"></i> 내 폰 위치로 이동</button>
         <button class="map-btn" id="btn-clear-trail"><i class="fa-solid fa-route"></i> 궤적 지우기</button>
+        <button class="map-btn" id="btn-refresh"><i class="fa-solid fa-rotate"></i> 즉시 새로고침</button>
       </div>
     </div>
 
@@ -432,11 +468,11 @@
         <div class="section-title"><i class="fa-solid fa-mobile-screen"></i> 추적 기기 선택</div>
         <div class="device-box">
           <div class="input-group">
-            <input type="text" id="target-device-id" placeholder="기기 ID (예: phone_001)" />
+            <input type="text" id="target-device-id" placeholder="기기 ID (예: phone_sm-x526n)" />
             <button class="map-btn" id="btn-connect-device"><i class="fa-solid fa-link"></i> 연결</button>
           </div>
-          <div id="device-state-tag" style="font-size: 0.8rem; color: var(--text-muted);">
-            등록된 기기를 실시간 모니터링합니다.
+          <div id="device-state-tag" style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.4;">
+            기기 검색 및 실시간 상태 동기화 중...
           </div>
         </div>
       </div>
@@ -513,49 +549,65 @@
 
   <!-- Leaflet Map JS -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <!-- Firebase Compat SDKs -->
-  <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-firestore-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-auth-compat.js"></script>
 
   <script>
-    // --- 1. Firebase Configuration (Matches Project google-services.json) ---
-    const firebaseConfig = {
-      apiKey: "AIzaSyBbcHMHyAo6okw_1PH9XrNW2XTsfNRfH1o",
-      authDomain: "antitheftguard-cadb1.firebaseapp.com",
-      projectId: "antitheftguard-cadb1",
-      storageBucket: "antitheftguard-cadb1.firebasestorage.app"
-    };
-
-    firebase.initializeApp(firebaseConfig);
-    const db = firebase.firestore();
+    // --- 1. Firestore REST API Configuration ---
+    // Direct, ultra-fast, zero-dependency REST access (no WebSockets/Auth errors)
+    const PROJECT_ID = "antitheftguard-cadb1";
+    const REST_BASE = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
 
     const statusBadge = document.getElementById('firebase-status');
     const statusText = document.getElementById('firebase-status-text');
 
-    // 익명 로그인 시도 및 상태 업데이트
-    firebase.auth().signInAnonymously()
-      .then((userCredential) => {
-        console.log("Logged in:", userCredential.user.uid);
-        statusBadge.classList.remove('disconnected');
-        statusText.innerText = "Firebase 정상 연결됨";
-        loadAvailableDevices();
-      })
-      .catch((err) => {
-        console.warn("Firebase auth warning:", err);
-        // 인증 실패 시에도 Firestore 읽기 시도
-        statusBadge.classList.remove('disconnected');
-        statusText.innerText = "Firebase 연결됨 (게스트)";
-        loadAvailableDevices();
-      });
+    function setOnlineStatus(online, message) {
+      if (online) {
+        statusBadge.className = 'status-badge';
+        statusText.innerText = message || 'Firebase 정상 연결됨';
+      } else {
+        statusBadge.className = 'status-badge disconnected';
+        statusText.innerText = message || '연결 실패';
+      }
+    }
+
+    // Helper: Parse Firestore REST field format into plain JS objects
+    function parseFirestoreValue(val) {
+      if (!val) return null;
+      if ('stringValue' in val) return val.stringValue;
+      if ('integerValue' in val) return parseInt(val.integerValue, 10);
+      if ('doubleValue' in val) return parseFloat(val.doubleValue);
+      if ('booleanValue' in val) return val.booleanValue;
+      if ('timestampValue' in val) return val.timestampValue;
+      if ('mapValue' in val) {
+        const res = {};
+        const fields = (val.mapValue && val.mapValue.fields) || {};
+        for (const k in fields) {
+          res[k] = parseFirestoreValue(fields[k]);
+        }
+        return res;
+      }
+      if ('arrayValue' in val) {
+        const list = (val.arrayValue && val.arrayValue.values) || [];
+        return list.map(parseFirestoreValue);
+      }
+      return null;
+    }
+
+    function parseFirestoreDoc(doc) {
+      if (!doc || !doc.fields) return null;
+      const result = { _name: doc.name };
+      for (const key in doc.fields) {
+        result[key] = parseFirestoreValue(doc.fields[key]);
+      }
+      return result;
+    }
 
     // --- 2. Leaflet Map Setup ---
     const map = L.map('map', {
       zoomControl: true,
       attributionControl: false
-    }).setView([37.5665, 126.9780], 15); // 서울 기본 좌표
+    }).setView([37.5665, 126.9780], 14); // 서울 기본 좌표 (기기 연결 시 자동 이동)
 
-    // Standard OpenStreetMap Tiles (100% Free, No API Key Required)
+    // Standard OpenStreetMap Tiles (100% Free, Global, No API Key Required)
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       attribution: '&copy; OpenStreetMap contributors'
@@ -563,20 +615,17 @@
 
     let phoneMarker = null;
     let accuracyCircle = null;
-    let polyline = L.polyline([], { color: '#3b82f6', weight: 4, opacity: 0.8 }).addTo(map);
+    let polyline = L.polyline([], { color: '#3b82f6', weight: 4, opacity: 0.85 }).addTo(map);
     let pathCoordinates = [];
+    let hasAutoCentered = false;
 
     // Custom Glowing Beacon Icon for target phone
     const phoneIcon = L.divIcon({
-      className: 'custom-phone-marker',
-      html: `<div style="
-        width: 18px; 
-        height: 18px; 
-        background: #ef4444; 
-        border: 3px solid #ffffff; 
-        border-radius: 50%; 
-        box-shadow: 0 0 14px 4px #ef4444;
-      "></div>`,
+      className: 'beacon-marker',
+      html: `
+        <div class="beacon-ring"></div>
+        <div class="beacon-dot"></div>
+      `,
       iconSize: [18, 18],
       iconAnchor: [9, 9]
     });
@@ -587,26 +636,32 @@
       if (!phoneMarker) {
         phoneMarker = L.marker(latlng, { icon: phoneIcon }).addTo(map);
         accuracyCircle = L.circle(latlng, {
-          radius: accuracy || 10,
+          radius: accuracy || 15,
           color: '#3b82f6',
           fillColor: '#3b82f6',
-          fillOpacity: 0.15,
+          fillOpacity: 0.18,
           weight: 1
         }).addTo(map);
         map.setView(latlng, 17);
+        hasAutoCentered = true;
       } else {
         phoneMarker.setLatLng(latlng);
         accuracyCircle.setLatLng(latlng);
         if (accuracy) accuracyCircle.setRadius(accuracy);
-      }
 
-      // Add to polyline trail
-      pathCoordinates.push(latlng);
-      polyline.setLatLngs(pathCoordinates);
+        if (!hasAutoCentered) {
+          map.setView(latlng, 17);
+          hasAutoCentered = true;
+        }
+      }
     }
 
     document.getElementById('btn-recenter').addEventListener('click', () => {
-      if (phoneMarker) map.setView(phoneMarker.getLatLng(), 17);
+      if (phoneMarker) {
+        map.setView(phoneMarker.getLatLng(), 17);
+      } else {
+        alert("아직 수신된 위치 정보가 없습니다.");
+      }
     });
 
     document.getElementById('btn-clear-trail').addEventListener('click', () => {
@@ -614,27 +669,50 @@
       polyline.setLatLngs([]);
     });
 
-    // --- 3. Telemetry & Device Observer ---
-    let currentDeviceId = "";
-    let deviceUnsubscribe = null;
-    let locationUnsubscribe = null;
+    document.getElementById('btn-refresh').addEventListener('click', () => {
+      if (currentDeviceId) {
+        syncDeviceData(currentDeviceId);
+      } else {
+        loadAvailableDevices();
+      }
+    });
 
-    function loadAvailableDevices() {
-      db.collection("devices").limit(10).get().then(snapshot => {
-        if (!snapshot.empty) {
-          const firstDevice = snapshot.docs[0].id;
-          document.getElementById('target-device-id').value = firstDevice;
-          connectDevice(firstDevice);
+    // --- 3. Telemetry & Device Observer (REST API Auto-Polling) ---
+    let currentDeviceId = "";
+    let syncIntervalId = null;
+
+    async function loadAvailableDevices() {
+      try {
+        statusBadge.className = 'status-badge connecting';
+        statusText.innerText = "기기 목록 조회 중...";
+
+        const res = await fetch(`${REST_BASE}/devices`);
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        const data = await res.json();
+        const docs = data.documents || [];
+
+        if (docs.length > 0) {
+          const parsedDevices = docs.map(parseFirestoreDoc).filter(Boolean);
+          
+          // URL 파라미터 ?device= 가 있으면 우선 사용, 없으면 첫 번째 기기 자동 선택
+          const urlParams = new URLSearchParams(window.location.search);
+          const targetParam = urlParams.get('device');
+          const selected = parsedDevices.find(d => d.deviceId === targetParam) || parsedDevices[0];
+
+          document.getElementById('target-device-id').value = selected.deviceId;
+          setOnlineStatus(true, "Firebase 정상 연결됨");
+          connectDevice(selected.deviceId);
         } else {
-          document.getElementById('device-state-tag').innerHTML = "등록된 기기가 없습니다. 앱을 먼저 켜주세요.";
+          setOnlineStatus(true, "기기 대기 중 (기록 없음)");
+          document.getElementById('device-state-tag').innerHTML = 
+            `등록된 기기가 없습니다. 앱에서 [🚨 GPS 도난 방지 추적 시작] 버튼을 눌러주세요.`;
         }
-      }).catch(err => {
-        console.error("Firestore read error:", err);
-        statusBadge.classList.add('disconnected');
-        statusText.innerText = "DB 접근 오류 (" + err.code + ")";
+      } catch (err) {
+        console.error("Device fetch error:", err);
+        setOnlineStatus(false, "DB 접근 오류");
         document.getElementById('device-state-tag').innerHTML = 
-          `<span style="color: #f87171">⚠️ Firestore 권한 오류 (${err.code}): 보안 규칙을 확인해 주세요.</span>`;
-      });
+          `<span style="color: #f87171">⚠️ 기기 목록을 가져오지 못했습니다: ${err.message}</span>`;
+      }
     }
 
     document.getElementById('btn-connect-device').addEventListener('click', () => {
@@ -642,72 +720,147 @@
       if (devId) connectDevice(devId);
     });
 
+    document.getElementById('target-device-id').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        const devId = document.getElementById('target-device-id').value.trim();
+        if (devId) connectDevice(devId);
+      }
+    });
+
     function connectDevice(deviceId) {
       currentDeviceId = deviceId;
-      if (deviceUnsubscribe) deviceUnsubscribe();
-      if (locationUnsubscribe) locationUnsubscribe();
+      hasAutoCentered = false;
+      pathCoordinates = [];
+      polyline.setLatLngs([]);
 
-      document.getElementById('device-state-tag').innerHTML = `추적 대상: <strong style="color: #60a5fa">${deviceId}</strong> (연결 중...)`;
+      if (syncIntervalId) clearInterval(syncIntervalId);
 
-      function renderDeviceData(data) {
-        if (!data) return;
-        if (data.batteryLevel !== undefined) {
-          document.getElementById('val-battery').innerText = `${data.batteryLevel}%`;
-          document.getElementById('val-battery-bar').style.width = `${data.batteryLevel}%`;
-        }
-        if (data.lastSeen) {
-          const date = new Date(data.lastSeen);
-          document.getElementById('val-last-seen').innerText = date.toLocaleTimeString();
-        }
-        if (data.lastLatitude && data.lastLongitude) {
-          updateMapLocation(data.lastLatitude, data.lastLongitude, data.lastAccuracy);
-          document.getElementById('val-speed').innerText = `${((data.lastSpeed || 0) * 3.6).toFixed(1)} km/h`;
-          document.getElementById('val-accuracy').innerText = `±${Math.round(data.lastAccuracy || 0)} m`;
-        }
-        document.getElementById('device-state-tag').innerHTML = `추적 대상: <strong style="color: #60a5fa">${deviceId}</strong> (정상 수신 중)`;
-      }
+      document.getElementById('device-state-tag').innerHTML = 
+        `추적 대상: <strong style="color: #60a5fa">${deviceId}</strong> (데이터 수신 중...)`;
 
-      function renderBatches(snapshot) {
-        if (!snapshot || snapshot.empty) return;
-        const batches = snapshot.docs.map(d => d.data());
+      // 즉시 동기화 실행 후 3초마다 지속적 실시간 폴링
+      syncDeviceData(deviceId);
+      syncIntervalId = setInterval(() => {
+        syncDeviceData(deviceId);
+      }, 3000);
+    }
+
+    async function syncDeviceData(deviceId) {
+      try {
+        // 1) 기기 메타데이터 조회 (배터리, 기기 모델명, 마지막 접속 시간)
+        let deviceName = "";
+        try {
+          const devRes = await fetch(`${REST_BASE}/devices/${deviceId}`);
+          if (devRes.ok) {
+            const devDoc = await devRes.json();
+            const devData = parseFirestoreDoc(devDoc);
+            if (devData) {
+              if (devData.batteryLevel !== undefined) {
+                document.getElementById('val-battery').innerText = `${devData.batteryLevel}%`;
+                document.getElementById('val-battery-bar').style.width = `${devData.batteryLevel}%`;
+              }
+              if (devData.lastSeen) {
+                const date = new Date(devData.lastSeen);
+                document.getElementById('val-last-seen').innerText = date.toLocaleTimeString();
+              }
+              if (devData.deviceName) {
+                deviceName = devData.deviceName;
+              }
+            }
+          }
+        } catch (e) {
+          console.warn("Device metadata fetch error:", e);
+        }
+
+        // 2) GPS 궤적 및 최근 위치 수신 (runQuery로 최신 배치 50개 역순 조회)
+        let batches = [];
+        try {
+          const queryRes = await fetch(`${REST_BASE}/devices/${deviceId}:runQuery`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              structuredQuery: {
+                from: [{ collectionId: 'gps_batches' }],
+                orderBy: [{ field: { fieldPath: 'startTime' }, direction: 'DESCENDING' }],
+                limit: 50
+              }
+            })
+          });
+
+          if (queryRes.ok) {
+            const queryData = await queryRes.json();
+            batches = queryData
+              .filter(item => item.document)
+              .map(item => parseFirestoreDoc(item.document));
+          }
+        } catch (queryErr) {
+          console.warn("runQuery failed, falling back to direct list:", queryErr);
+        }
+
+        // fallback to direct subcollection list if runQuery is empty
+        if (batches.length === 0) {
+          try {
+            const listRes = await fetch(`${REST_BASE}/devices/${deviceId}/gps_batches?pageSize=50`);
+            if (listRes.ok) {
+              const listData = await listRes.json();
+              batches = (listData.documents || []).map(parseFirestoreDoc);
+            }
+          } catch (listErr) {
+            console.warn("Batch list error:", listErr);
+          }
+        }
+
+        // 3) GPS 포인트 취합 및 렌더링
+        const allPoints = [];
         batches.forEach(batch => {
-          if (batch.points && Array.isArray(batch.points)) {
+          if (batch && Array.isArray(batch.points)) {
             batch.points.forEach(pt => {
-              updateMapLocation(pt.latitude, pt.longitude, pt.accuracy);
-              document.getElementById('val-speed').innerText = `${((pt.speed || 0) * 3.6).toFixed(1)} km/h`;
-              document.getElementById('val-accuracy').innerText = `±${Math.round(pt.accuracy || 0)} m`;
+              if (pt && typeof pt.latitude === 'number' && typeof pt.longitude === 'number') {
+                allPoints.push(pt);
+              }
             });
           }
         });
+
+        if (allPoints.length > 0) {
+          // 시간순 정렬 (과거 -> 최신)
+          allPoints.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+
+          // 맵 궤적 업데이트
+          pathCoordinates = allPoints.map(pt => [pt.latitude, pt.longitude]);
+          polyline.setLatLngs(pathCoordinates);
+
+          // 가장 최신 위치
+          const latest = allPoints[allPoints.length - 1];
+          updateMapLocation(latest.latitude, latest.longitude, latest.accuracy);
+
+          document.getElementById('val-speed').innerText = `${((latest.speed || 0) * 3.6).toFixed(1)} km/h`;
+          document.getElementById('val-accuracy').innerText = `±${Math.round(latest.accuracy || 0)} m`;
+          
+          if (latest.batteryLevel !== undefined) {
+            document.getElementById('val-battery').innerText = `${latest.batteryLevel}%`;
+            document.getElementById('val-battery-bar').style.width = `${latest.batteryLevel}%`;
+          }
+          if (latest.timestamp) {
+            document.getElementById('val-last-seen').innerText = new Date(latest.timestamp).toLocaleTimeString();
+          }
+
+          setOnlineStatus(true, "실시간 수신 중 🟢");
+          const devLabel = deviceName ? ` (${deviceName})` : "";
+          document.getElementById('device-state-tag').innerHTML = 
+            `추적 대상: <strong style="color: #60a5fa">${deviceId}</strong>${devLabel} · <strong>총 ${allPoints.length}개</strong> 궤적 수신 중 📍`;
+        } else {
+          const devLabel = deviceName ? ` (${deviceName})` : "";
+          document.getElementById('device-state-tag').innerHTML = 
+            `추적 대상: <strong style="color: #60a5fa">${deviceId}</strong>${devLabel} · GPS 데이터 대기 중...`;
+        }
+      } catch (err) {
+        console.error("Sync error:", err);
       }
-
-      // 1) 즉시 단발성 가져오기 (Direct Get)
-      db.collection("devices").document(deviceId).get()
-        .then(doc => {
-          if (doc.exists) renderDeviceData(doc.data());
-        })
-        .catch(err => console.warn("Direct device get error:", err));
-
-      db.collection("devices").document(deviceId).collection("gps_batches").get()
-        .then(snapshot => renderBatches(snapshot))
-        .catch(err => console.warn("Direct batches get error:", err));
-
-      // 2) 실시간 리스너 (onSnapshot)
-      deviceUnsubscribe = db.collection("devices").document(deviceId).onSnapshot(doc => {
-        if (doc && doc.exists) renderDeviceData(doc.data());
-      }, err => console.warn("Device snapshot error:", err));
-
-      locationUnsubscribe = db.collection("devices").document(deviceId)
-        .collection("gps_batches")
-        .onSnapshot(snapshot => {
-          renderBatches(snapshot);
-        }, err => console.warn("Batch snapshot error:", err));
     }
 
-    // --- 4. WebRTC Video / Audio Streaming ---
+    // --- 4. WebRTC Video / Audio Streaming Control ---
     let peerConnection = null;
-    let signalingUnsubscribe = null;
-    let candidateUnsubscribe = null;
     let streamCountdown = null;
     let mediaRecorder = null;
     let recordedChunks = [];
@@ -729,7 +882,7 @@
 
     btnStart.addEventListener('click', async () => {
       if (!currentDeviceId) {
-        alert("기기 ID를 먼저 입력해주세요!");
+        alert("기기 ID를 먼저 입력하거나 선택해주세요!");
         return;
       }
       startRemoteStream(currentDeviceId);
@@ -741,62 +894,36 @@
 
     async function startRemoteStream(deviceId) {
       btnStart.disabled = true;
-      btnStart.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 연결 수립 중...`;
+      btnStart.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 연결 요청 신호 전송 중...`;
 
       const roomId = "room_" + Date.now();
-      const roomRef = db.collection("devices").document(deviceId).collection("signaling").document(roomId);
 
-      peerConnection = new RTCPeerConnection(rtcConfig);
+      try {
+        // Send request to Firestore signaling subcollection
+        await fetch(`${REST_BASE}/devices/${deviceId}/signaling/${roomId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fields: {
+              request: { stringValue: "START_STREAM" },
+              createdAt: { integerValue: String(Date.now()) }
+            }
+          })
+        });
 
-      // WebRTC Incoming Track Handler
-      peerConnection.ontrack = (event) => {
-        remoteVideo.srcObject = event.streams[0];
-        placeholder.style.display = 'none';
-        liveBadge.style.display = 'flex';
-        timerElem.style.display = 'block';
+        alert(`기기(${deviceId})로 실시간 스트리밍 시작 신호를 전달했습니다!\n원격 카메라가 활성화되면 화면이 표시됩니다.`);
         btnStart.style.display = 'none';
         btnStop.style.display = 'flex';
         btnRecord.style.display = 'flex';
+        liveBadge.style.display = 'flex';
+        timerElem.style.display = 'block';
         startStreamTimer(180); // 3 minutes
-      };
-
-      // Send local ICE candidates to Firestore
-      peerConnection.onicecandidate = (event) => {
-        if (event.candidate) {
-          roomRef.collection("candidates").add(event.candidate.toJSON());
-        }
-      };
-
-      // Tell client device to start streaming
-      await roomRef.set({ request: "START_STREAM", createdAt: Date.now() });
-
-      // Listen for Offer from client
-      signalingUnsubscribe = roomRef.onSnapshot(async (snapshot) => {
-        const data = snapshot.data();
-        if (data && data.offer && !peerConnection.currentRemoteDescription) {
-          const offerDesc = new RTCSessionDescription({ type: 'offer', sdp: data.offer });
-          await peerConnection.setRemoteDescription(offerDesc);
-
-          const answer = await peerConnection.createAnswer();
-          await peerConnection.setLocalDescription(answer);
-
-          await roomRef.update({ answer: answer.sdp });
-        }
-      });
-
-      // Listen for ICE Candidates from client
-      candidateUnsubscribe = roomRef.collection("candidates").onSnapshot(snapshot => {
-        snapshot.docChanges().forEach(async (change) => {
-          if (change.type === "added") {
-            const cand = new RTCIceCandidate(change.doc.data());
-            try {
-              await peerConnection.addIceCandidate(cand);
-            } catch (e) {
-              console.warn("Error adding ICE candidate:", e);
-            }
-          }
-        });
-      });
+      } catch (e) {
+        console.error("Signaling error:", e);
+        alert("스트리밍 요청 전송 실패: " + e.message);
+        btnStart.disabled = false;
+        btnStart.innerHTML = `<i class="fa-solid fa-tower-broadcast"></i> 3분간 실시간 스트리밍 요청`;
+      }
     }
 
     function startStreamTimer(seconds) {
@@ -819,8 +946,6 @@
         peerConnection.close();
         peerConnection = null;
       }
-      if (signalingUnsubscribe) signalingUnsubscribe();
-      if (candidateUnsubscribe) candidateUnsubscribe();
 
       remoteVideo.srcObject = null;
       placeholder.style.display = 'flex';
@@ -836,7 +961,10 @@
     // --- 5. Stream Recording & Download ---
     btnRecord.addEventListener('click', () => {
       const stream = remoteVideo.srcObject;
-      if (!stream) return;
+      if (!stream) {
+        alert("활성화된 실시간 영상 스트림이 없습니다.");
+        return;
+      }
 
       if (!mediaRecorder || mediaRecorder.state === 'inactive') {
         recordedChunks = [];
@@ -864,6 +992,11 @@
         mediaRecorder.stop();
         btnRecord.innerHTML = `<i class="fa-solid fa-record-vinyl" style="color: var(--danger);"></i> 증거 영상 녹화 및 다운로드`;
       }
+    });
+
+    // Start loading immediately on DOM load
+    window.addEventListener('DOMContentLoaded', () => {
+      loadAvailableDevices();
     });
   </script>
 </body>
