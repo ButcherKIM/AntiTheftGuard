@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "461707813716",
+    "project_id": "antitheftguard-cadb1",
+    "storage_bucket": "antitheftguard-cadb1.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:461707813716:android:95ec2a98c5a1a0597cdec1",
+        "android_client_info": {
+          "package_name": "com.antitheftguard.client"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBbcHMHyAo6okw_1PH9XrNW2XTsfNRfH1o"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:461707813716:android:940e3e5155108d747cdec1",
+        "android_client_info": {
+          "package_name": "com.antitheftguard.master"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBbcHMHyAo6okw_1PH9XrNW2XTsfNRfH1o"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

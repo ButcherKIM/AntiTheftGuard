@@ -1,0 +1,837 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AntiTheft Guard - 호스트 웹 대시보드</title>
+  
+  <!-- Leaflet Map CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <!-- Google Fonts & Font Awesome Icons -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Pretendard:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+
+  <style>
+    :root {
+      --bg-dark: #0f172a;
+      --bg-panel: #1e293b;
+      --bg-card: #273549;
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --danger: #ef4444;
+      --danger-hover: #dc2626;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --border: #334155;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif;
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* Top Navigation */
+    header {
+      background: var(--bg-panel);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 1000;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 1.25rem;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+    }
+
+    .brand i {
+      color: var(--primary);
+      font-size: 1.5rem;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .status-badge {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.85rem;
+      padding: 6px 14px;
+      border-radius: 9999px;
+      background: #064e3b;
+      color: #34d399;
+      font-weight: 600;
+    }
+
+    .status-badge.disconnected {
+      background: #7f1d1d;
+      color: #f87171;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: currentColor;
+      box-shadow: 0 0 8px currentColor;
+    }
+
+    /* Main Container */
+    main {
+      display: flex;
+      flex: 1;
+      height: calc(100vh - 65px);
+      position: relative;
+    }
+
+    /* Map Section */
+    #map-container {
+      flex: 1;
+      height: 100%;
+      position: relative;
+    }
+
+    #map {
+      width: 100%;
+      height: 100%;
+      background: #111827;
+    }
+
+    /* Map Overlay Controls */
+    .map-controls {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      z-index: 900;
+      display: flex;
+      gap: 8px;
+    }
+
+    .map-btn {
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      color: var(--text-main);
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+      transition: all 0.2s;
+    }
+
+    .map-btn:hover {
+      background: var(--bg-card);
+      border-color: var(--primary);
+    }
+
+    /* Right Dashboard Sidebar */
+    .sidebar {
+      width: 440px;
+      background: var(--bg-panel);
+      border-left: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      z-index: 950;
+    }
+
+    .sidebar-section {
+      padding: 20px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .section-title {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* Device Selector Box */
+    .device-box {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .input-group {
+      display: flex;
+      gap: 8px;
+    }
+
+    input, select {
+      flex: 1;
+      background: var(--bg-dark);
+      border: 1px solid var(--border);
+      color: var(--text-main);
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      outline: none;
+    }
+
+    input:focus, select:focus {
+      border-color: var(--primary);
+    }
+
+    /* Telemetry Grid */
+    .telemetry-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+    }
+
+    .telemetry-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .telemetry-label {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .telemetry-val {
+      font-size: 1.1rem;
+      font-weight: 700;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* Progress Bar */
+    .progress-bar {
+      height: 6px;
+      background: #334155;
+      border-radius: 3px;
+      overflow: hidden;
+      margin-top: 6px;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: var(--success);
+      width: 0%;
+      transition: width 0.3s ease;
+    }
+
+    /* Live Video Monitor */
+    .video-monitor {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .video-wrapper {
+      position: relative;
+      width: 100%;
+      height: 240px;
+      background: #000;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .video-placeholder {
+      position: absolute;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      color: var(--text-muted);
+      font-size: 0.9rem;
+    }
+
+    .video-placeholder i {
+      font-size: 2.5rem;
+      opacity: 0.5;
+    }
+
+    .live-badge {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      background: var(--danger);
+      color: #fff;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      display: none;
+      align-items: center;
+      gap: 6px;
+      animation: pulse 1.5s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.6; }
+    }
+
+    .stream-timer {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      background: rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(4px);
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      font-weight: 700;
+      font-family: 'JetBrains Mono', monospace;
+      display: none;
+    }
+
+    /* Action Buttons */
+    .btn-action-primary {
+      background: var(--danger);
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      padding: 14px;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      transition: background 0.2s, transform 0.1s;
+      width: 100%;
+    }
+
+    .btn-action-primary:hover {
+      background: var(--danger-hover);
+    }
+
+    .btn-action-primary:active {
+      transform: scale(0.98);
+    }
+
+    .btn-action-secondary {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      color: var(--text-main);
+      border-radius: 10px;
+      padding: 12px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: all 0.2s;
+      width: 100%;
+    }
+
+    .btn-action-secondary:hover {
+      background: #334155;
+    }
+
+    /* Responsive */
+    @media (max-width: 900px) {
+      body {
+        height: auto;
+        overflow: auto;
+      }
+      main {
+        flex-direction: column;
+        height: auto;
+      }
+      #map-container {
+        height: 450px;
+      }
+      .sidebar {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <header>
+    <div class="brand">
+      <i class="fa-solid fa-shield-halved"></i>
+      <span>AntiTheft Guard <span style="font-size: 0.8rem; font-weight: 500; color: var(--text-muted);">HOST WEB</span></span>
+    </div>
+    <div class="header-actions">
+      <div id="firebase-status" class="status-badge disconnected">
+        <span class="status-dot"></span>
+        <span id="firebase-status-text">Firebase 연결 중...</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Body -->
+  <main>
+    <!-- Map Section -->
+    <div id="map-container">
+      <div id="map"></div>
+      <div class="map-controls">
+        <button class="map-btn" id="btn-recenter"><i class="fa-solid fa-crosshairs"></i> 내 폰 위치로 이동</button>
+        <button class="map-btn" id="btn-clear-trail"><i class="fa-solid fa-route"></i> 궤적 지우기</button>
+      </div>
+    </div>
+
+    <!-- Sidebar Section -->
+    <div class="sidebar">
+      
+      <!-- Device Selector -->
+      <div class="sidebar-section">
+        <div class="section-title"><i class="fa-solid fa-mobile-screen"></i> 추적 기기 선택</div>
+        <div class="device-box">
+          <div class="input-group">
+            <input type="text" id="target-device-id" placeholder="기기 ID (예: phone_001)" />
+            <button class="map-btn" id="btn-connect-device"><i class="fa-solid fa-link"></i> 연결</button>
+          </div>
+          <div id="device-state-tag" style="font-size: 0.8rem; color: var(--text-muted);">
+            등록된 기기를 실시간 모니터링합니다.
+          </div>
+        </div>
+      </div>
+
+      <!-- Telemetry Info -->
+      <div class="sidebar-section">
+        <div class="section-title"><i class="fa-solid fa-gauge-high"></i> 실시간 상태 정보</div>
+        <div class="telemetry-grid">
+          
+          <div class="telemetry-card">
+            <div class="telemetry-label"><i class="fa-solid fa-battery-half"></i> 배터리 잔량</div>
+            <div class="telemetry-val" id="val-battery">--%</div>
+            <div class="progress-bar">
+              <div class="progress-fill" id="val-battery-bar"></div>
+            </div>
+          </div>
+
+          <div class="telemetry-card">
+            <div class="telemetry-label"><i class="fa-solid fa-gauge"></i> 이동 속도</div>
+            <div class="telemetry-val" id="val-speed">0.0 km/h</div>
+          </div>
+
+          <div class="telemetry-card">
+            <div class="telemetry-label"><i class="fa-solid fa-bullseye"></i> GPS 정밀도</div>
+            <div class="telemetry-val" id="val-accuracy">-- m</div>
+          </div>
+
+          <div class="telemetry-card">
+            <div class="telemetry-label"><i class="fa-solid fa-clock"></i> 마지막 수신</div>
+            <div class="telemetry-val" id="val-last-seen" style="font-size: 0.95rem;">--</div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Live WebRTC Camera Stream Monitor -->
+      <div class="sidebar-section">
+        <div class="section-title"><i class="fa-solid fa-video"></i> 실시간 영상 및 오디오</div>
+        <div class="video-monitor">
+          
+          <div class="video-wrapper">
+            <video id="remote-video" autoplay playsinline></video>
+            
+            <div class="video-placeholder" id="video-placeholder">
+              <i class="fa-solid fa-camera-rotate"></i>
+              <span>스트리밍 대기 중</span>
+            </div>
+
+            <div class="live-badge" id="live-badge">
+              <i class="fa-solid fa-circle"></i> LIVE
+            </div>
+
+            <div class="stream-timer" id="stream-timer">03:00</div>
+          </div>
+
+          <!-- Action Buttons -->
+          <button class="btn-action-primary" id="btn-start-stream">
+            <i class="fa-solid fa-tower-broadcast"></i> 3분간 실시간 스트리밍 요청
+          </button>
+
+          <button class="btn-action-secondary" id="btn-record-stream" style="display: none;">
+            <i class="fa-solid fa-record-vinyl" style="color: var(--danger);"></i> 증거 영상 녹화 및 다운로드
+          </button>
+
+          <button class="btn-action-secondary" id="btn-stop-stream" style="display: none;">
+            <i class="fa-solid fa-stop"></i> 스트리밍 중지
+          </button>
+
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- Leaflet Map JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <!-- Firebase Compat SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-auth-compat.js"></script>
+
+  <script>
+    // --- 1. Firebase Configuration (Matches Project google-services.json) ---
+    const firebaseConfig = {
+      apiKey: "AIzaSyBbcHMHyAo6okw_1PH9XrNW2XTsfNRfH1o",
+      projectId: "antitheftguard-cadb1",
+      storageBucket: "antitheftguard-cadb1.firebasestorage.app"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+
+    const statusBadge = document.getElementById('firebase-status');
+    const statusText = document.getElementById('firebase-status-text');
+
+    // Sign in anonymously for secure access
+    firebase.auth().signInAnonymously()
+      .then(() => {
+        statusBadge.classList.remove('disconnected');
+        statusText.innerText = "Firebase 정상 연결됨";
+        loadAvailableDevices();
+      })
+      .catch((err) => {
+        console.error("Firebase auth error:", err);
+        statusText.innerText = "Firebase 연결 실패";
+      });
+
+    // --- 2. Leaflet Map Setup ---
+    const map = L.map('map', {
+      zoomControl: true,
+      attributionControl: false
+    }).setView([37.5665, 126.9780], 15); // 서울 기본 좌표
+
+    // OpenStreetMap Dark Theme Tiles (CartoDB Dark Matter)
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      maxZoom: 19
+    }).addTo(map);
+
+    let phoneMarker = null;
+    let accuracyCircle = null;
+    let polyline = L.polyline([], { color: '#3b82f6', weight: 4, opacity: 0.8 }).addTo(map);
+    let pathCoordinates = [];
+
+    // Custom Glowing Beacon Icon for target phone
+    const phoneIcon = L.divIcon({
+      className: 'custom-phone-marker',
+      html: `<div style="
+        width: 18px; 
+        height: 18px; 
+        background: #ef4444; 
+        border: 3px solid #ffffff; 
+        border-radius: 50%; 
+        box-shadow: 0 0 14px 4px #ef4444;
+      "></div>`,
+      iconSize: [18, 18],
+      iconAnchor: [9, 9]
+    });
+
+    function updateMapLocation(lat, lng, accuracy) {
+      const latlng = [lat, lng];
+
+      if (!phoneMarker) {
+        phoneMarker = L.marker(latlng, { icon: phoneIcon }).addTo(map);
+        accuracyCircle = L.circle(latlng, {
+          radius: accuracy || 10,
+          color: '#3b82f6',
+          fillColor: '#3b82f6',
+          fillOpacity: 0.15,
+          weight: 1
+        }).addTo(map);
+        map.setView(latlng, 17);
+      } else {
+        phoneMarker.setLatLng(latlng);
+        accuracyCircle.setLatLng(latlng);
+        if (accuracy) accuracyCircle.setRadius(accuracy);
+      }
+
+      // Add to polyline trail
+      pathCoordinates.push(latlng);
+      polyline.setLatLngs(pathCoordinates);
+    }
+
+    document.getElementById('btn-recenter').addEventListener('click', () => {
+      if (phoneMarker) map.setView(phoneMarker.getLatLng(), 17);
+    });
+
+    document.getElementById('btn-clear-trail').addEventListener('click', () => {
+      pathCoordinates = [];
+      polyline.setLatLngs([]);
+    });
+
+    // --- 3. Telemetry & Device Observer ---
+    let currentDeviceId = "";
+    let deviceUnsubscribe = null;
+    let locationUnsubscribe = null;
+
+    function loadAvailableDevices() {
+      db.collection("devices").limit(5).get().then(snapshot => {
+        if (!snapshot.empty) {
+          const firstDevice = snapshot.docs[0].id;
+          document.getElementById('target-device-id').value = firstDevice;
+          connectDevice(firstDevice);
+        }
+      });
+    }
+
+    document.getElementById('btn-connect-device').addEventListener('click', () => {
+      const devId = document.getElementById('target-device-id').value.trim();
+      if (devId) connectDevice(devId);
+    });
+
+    function connectDevice(deviceId) {
+      currentDeviceId = deviceId;
+      if (deviceUnsubscribe) deviceUnsubscribe();
+      if (locationUnsubscribe) locationUnsubscribe();
+
+      document.getElementById('device-state-tag').innerHTML = `추적 대상: <strong style="color: #60a5fa">${deviceId}</strong>`;
+
+      // 1) Observe Device Document (battery, lastSeen, etc.)
+      deviceUnsubscribe = db.collection("devices").document(deviceId).onSnapshot(doc => {
+        if (doc.exists) {
+          const data = doc.data();
+          if (data.batteryLevel !== undefined) {
+            document.getElementById('val-battery').innerText = `${data.batteryLevel}%`;
+            document.getElementById('val-battery-bar').style.width = `${data.batteryLevel}%`;
+          }
+          if (data.lastSeen) {
+            const date = new Date(data.lastSeen);
+            document.getElementById('val-last-seen').innerText = date.toLocaleTimeString();
+          }
+        }
+      });
+
+      // 2) Observe Batched Locations
+      locationUnsubscribe = db.collection("devices").document(deviceId)
+        .collection("gps_batches")
+        .orderBy("startTime", "desc")
+        .limit(10)
+        .onSnapshot(snapshot => {
+          if (!snapshot.empty) {
+            const batches = snapshot.docs.map(d => d.data());
+            batches.reverse().forEach(batch => {
+              if (batch.points && Array.isArray(batch.points)) {
+                batch.points.forEach(pt => {
+                  updateMapLocation(pt.latitude, pt.longitude, pt.accuracy);
+                  document.getElementById('val-speed').innerText = `${((pt.speed || 0) * 3.6).toFixed(1)} km/h`;
+                  document.getElementById('val-accuracy').innerText = `±${Math.round(pt.accuracy || 0)} m`;
+                });
+              }
+            });
+          }
+        });
+    }
+
+    // --- 4. WebRTC Video / Audio Streaming ---
+    let peerConnection = null;
+    let signalingUnsubscribe = null;
+    let candidateUnsubscribe = null;
+    let streamCountdown = null;
+    let mediaRecorder = null;
+    let recordedChunks = [];
+
+    const rtcConfig = {
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' }
+      ]
+    };
+
+    const btnStart = document.getElementById('btn-start-stream');
+    const btnStop = document.getElementById('btn-stop-stream');
+    const btnRecord = document.getElementById('btn-record-stream');
+    const remoteVideo = document.getElementById('remote-video');
+    const placeholder = document.getElementById('video-placeholder');
+    const liveBadge = document.getElementById('live-badge');
+    const timerElem = document.getElementById('stream-timer');
+
+    btnStart.addEventListener('click', async () => {
+      if (!currentDeviceId) {
+        alert("기기 ID를 먼저 입력해주세요!");
+        return;
+      }
+      startRemoteStream(currentDeviceId);
+    });
+
+    btnStop.addEventListener('click', () => {
+      stopRemoteStream();
+    });
+
+    async function startRemoteStream(deviceId) {
+      btnStart.disabled = true;
+      btnStart.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 연결 수립 중...`;
+
+      const roomId = "room_" + Date.now();
+      const roomRef = db.collection("devices").document(deviceId).collection("signaling").document(roomId);
+
+      peerConnection = new RTCPeerConnection(rtcConfig);
+
+      // WebRTC Incoming Track Handler
+      peerConnection.ontrack = (event) => {
+        remoteVideo.srcObject = event.streams[0];
+        placeholder.style.display = 'none';
+        liveBadge.style.display = 'flex';
+        timerElem.style.display = 'block';
+        btnStart.style.display = 'none';
+        btnStop.style.display = 'flex';
+        btnRecord.style.display = 'flex';
+        startStreamTimer(180); // 3 minutes
+      };
+
+      // Send local ICE candidates to Firestore
+      peerConnection.onicecandidate = (event) => {
+        if (event.candidate) {
+          roomRef.collection("candidates").add(event.candidate.toJSON());
+        }
+      };
+
+      // Tell client device to start streaming
+      await roomRef.set({ request: "START_STREAM", createdAt: Date.now() });
+
+      // Listen for Offer from client
+      signalingUnsubscribe = roomRef.onSnapshot(async (snapshot) => {
+        const data = snapshot.data();
+        if (data && data.offer && !peerConnection.currentRemoteDescription) {
+          const offerDesc = new RTCSessionDescription({ type: 'offer', sdp: data.offer });
+          await peerConnection.setRemoteDescription(offerDesc);
+
+          const answer = await peerConnection.createAnswer();
+          await peerConnection.setLocalDescription(answer);
+
+          await roomRef.update({ answer: answer.sdp });
+        }
+      });
+
+      // Listen for ICE Candidates from client
+      candidateUnsubscribe = roomRef.collection("candidates").onSnapshot(snapshot => {
+        snapshot.docChanges().forEach(async (change) => {
+          if (change.type === "added") {
+            const cand = new RTCIceCandidate(change.doc.data());
+            try {
+              await peerConnection.addIceCandidate(cand);
+            } catch (e) {
+              console.warn("Error adding ICE candidate:", e);
+            }
+          }
+        });
+      });
+    }
+
+    function startStreamTimer(seconds) {
+      let remaining = seconds;
+      clearInterval(streamCountdown);
+      streamCountdown = setInterval(() => {
+        remaining--;
+        const m = String(Math.floor(remaining / 60)).padStart(2, '0');
+        const s = String(remaining % 60).padStart(2, '0');
+        timerElem.innerText = `${m}:${s}`;
+        if (remaining <= 0) {
+          stopRemoteStream();
+        }
+      }, 1000);
+    }
+
+    function stopRemoteStream() {
+      clearInterval(streamCountdown);
+      if (peerConnection) {
+        peerConnection.close();
+        peerConnection = null;
+      }
+      if (signalingUnsubscribe) signalingUnsubscribe();
+      if (candidateUnsubscribe) candidateUnsubscribe();
+
+      remoteVideo.srcObject = null;
+      placeholder.style.display = 'flex';
+      liveBadge.style.display = 'none';
+      timerElem.style.display = 'none';
+      btnStart.style.display = 'flex';
+      btnStart.disabled = false;
+      btnStart.innerHTML = `<i class="fa-solid fa-tower-broadcast"></i> 3분간 실시간 스트리밍 요청`;
+      btnStop.style.display = 'none';
+      btnRecord.style.display = 'none';
+    }
+
+    // --- 5. Stream Recording & Download ---
+    btnRecord.addEventListener('click', () => {
+      const stream = remoteVideo.srcObject;
+      if (!stream) return;
+
+      if (!mediaRecorder || mediaRecorder.state === 'inactive') {
+        recordedChunks = [];
+        mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+        mediaRecorder.ondataavailable = (e) => {
+          if (e.data.size > 0) recordedChunks.push(e.data);
+        };
+        mediaRecorder.onstop = () => {
+          const blob = new Blob(recordedChunks, { type: 'video/webm' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.style.display = 'none';
+          a.href = url;
+          a.download = `AntiTheft_Evidence_${Date.now()}.webm`;
+          document.body.appendChild(a);
+          a.click();
+          setTimeout(() => {
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+          }, 100);
+        };
+        mediaRecorder.start();
+        btnRecord.innerHTML = `<i class="fa-solid fa-stop" style="color: var(--danger);"></i> 녹화 중지 및 파일 저장`;
+      } else {
+        mediaRecorder.stop();
+        btnRecord.innerHTML = `<i class="fa-solid fa-record-vinyl" style="color: var(--danger);"></i> 증거 영상 녹화 및 다운로드`;
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,205 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true"
+    android:background="#0F172A">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="24dp">
+
+        <!-- Title Header -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="24dp">
+
+            <ImageView
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:src="@android:drawable/ic_menu_mylocation"
+                app:tint="#3B82F6"
+                android:layout_marginEnd="12dp" />
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="AntiTheft Guard"
+                    android:textColor="#F8FAFC"
+                    android:textSize="22sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="클라이언트 (도난 방지 추적용)"
+                    android:textColor="#94A3B8"
+                    android:textSize="13sp" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- Device ID Card (Pairing) -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            app:cardBackgroundColor="#1E293B"
+            app:strokeColor="#334155"
+            app:strokeWidth="1dp"
+            app:cardCornerRadius="14dp"
+            android:layout_marginBottom="16dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="18dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="🔑 내 기기 ID (웹 대시보드 연결용)"
+                    android:textColor="#94A3B8"
+                    android:textSize="13sp"
+                    android:textStyle="bold"
+                    android:layout_marginBottom="8dp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <EditText
+                        android:id="@+id/etDeviceId"
+                        android:layout_width="0dp"
+                        android:layout_height="48dp"
+                        android:layout_weight="1"
+                        android:background="#0F172A"
+                        android:paddingHorizontal="14dp"
+                        android:textColor="#F8FAFC"
+                        android:textSize="15sp"
+                        android:hint="기기 ID 입력 (예: my-phone)"
+                        android:textColorHint="#64748B"
+                        android:layout_marginEnd="8dp" />
+
+                    <Button
+                        android:id="@+id/btnSaveDeviceId"
+                        android:layout_width="wrap_content"
+                        android:layout_height="48dp"
+                        android:text="저장"
+                        android:backgroundTint="#3B82F6"
+                        android:textColor="#FFFFFF" />
+                </LinearLayout>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="* 웹 대시보드에서 이 ID를 입력하면 즉시 연결됩니다."
+                    android:textColor="#64748B"
+                    android:textSize="12sp"
+                    android:layout_marginTop="8dp" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- Status Card -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            app:cardBackgroundColor="#1E293B"
+            app:strokeColor="#334155"
+            app:strokeWidth="1dp"
+            app:cardCornerRadius="14dp"
+            android:layout_marginBottom="16dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="18dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="📡 실시간 동작 상태"
+                    android:textColor="#94A3B8"
+                    android:textSize="13sp"
+                    android:textStyle="bold"
+                    android:layout_marginBottom="12dp" />
+
+                <TextView
+                    android:id="@+id/tvDeviceStatus"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="GPS 추적 상태: 대기 중"
+                    android:textColor="#34D399"
+                    android:textSize="15sp"
+                    android:textStyle="bold"
+                    android:layout_marginBottom="8dp" />
+
+                <TextView
+                    android:id="@+id/tvBatteryStatus"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="배터리 잔량: --%"
+                    android:textColor="#CBD5E1"
+                    android:textSize="14sp"
+                    android:layout_marginBottom="8dp" />
+
+                <TextView
+                    android:id="@+id/tvPermissionsStatus"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="필수 권한: 확인 필요"
+                    android:textColor="#F59E0B"
+                    android:textSize="14sp" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- Service Toggle Button -->
+        <Button
+            android:id="@+id/btnToggleService"
+            android:layout_width="match_parent"
+            android:layout_height="54dp"
+            android:text="🚨 GPS 도난 방지 추적 시작"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:backgroundTint="#10B981"
+            android:textColor="#FFFFFF"
+            android:layout_marginBottom="12dp" />
+
+        <!-- Permissions Request Button -->
+        <Button
+            android:id="@+id/btnRequestPermissions"
+            android:layout_width="match_parent"
+            android:layout_height="50dp"
+            android:text="🛡️ 필수 권한 모두 허용하기"
+            android:textColor="#F8FAFC"
+            app:strokeColor="#3B82F6"
+            app:strokeWidth="1dp"
+            style="?attr/materialButtonOutlinedStyle"
+            android:layout_marginBottom="12dp" />
+
+        <!-- Battery Optimization Exemption Button -->
+        <Button
+            android:id="@+id/btnBatteryOptimization"
+            android:layout_width="match_parent"
+            android:layout_height="50dp"
+            android:text="🔋 백그라운드 배터리 최적화 예외 등록"
+            android:textColor="#F8FAFC"
+            app:strokeColor="#64748B"
+            app:strokeWidth="1dp"
+            style="?attr/materialButtonOutlinedStyle" />
+
+    </LinearLayout>
+</ScrollView>
