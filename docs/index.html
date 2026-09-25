@@ -522,6 +522,7 @@
     // --- 1. Firebase Configuration (Matches Project google-services.json) ---
     const firebaseConfig = {
       apiKey: "AIzaSyBbcHMHyAo6okw_1PH9XrNW2XTsfNRfH1o",
+      authDomain: "antitheftguard-cadb1.firebaseapp.com",
       projectId: "antitheftguard-cadb1",
       storageBucket: "antitheftguard-cadb1.firebasestorage.app"
     };
@@ -532,16 +533,20 @@
     const statusBadge = document.getElementById('firebase-status');
     const statusText = document.getElementById('firebase-status-text');
 
-    // Sign in anonymously for secure access
+    // 익명 로그인 시도 및 상태 업데이트
     firebase.auth().signInAnonymously()
-      .then(() => {
+      .then((userCredential) => {
+        console.log("Logged in:", userCredential.user.uid);
         statusBadge.classList.remove('disconnected');
         statusText.innerText = "Firebase 정상 연결됨";
         loadAvailableDevices();
       })
       .catch((err) => {
-        console.error("Firebase auth error:", err);
-        statusText.innerText = "Firebase 연결 실패";
+        console.warn("Firebase auth warning:", err);
+        // 인증 실패 시에도 Firestore 읽기 시도
+        statusBadge.classList.remove('disconnected');
+        statusText.innerText = "Firebase 연결됨 (게스트)";
+        loadAvailableDevices();
       });
 
     // --- 2. Leaflet Map Setup ---
@@ -614,12 +619,20 @@
     let locationUnsubscribe = null;
 
     function loadAvailableDevices() {
-      db.collection("devices").limit(5).get().then(snapshot => {
+      db.collection("devices").limit(10).get().then(snapshot => {
         if (!snapshot.empty) {
           const firstDevice = snapshot.docs[0].id;
           document.getElementById('target-device-id').value = firstDevice;
           connectDevice(firstDevice);
+        } else {
+          document.getElementById('device-state-tag').innerHTML = "등록된 기기가 없습니다. 앱을 먼저 켜주세요.";
         }
+      }).catch(err => {
+        console.error("Firestore read error:", err);
+        statusBadge.classList.add('disconnected');
+        statusText.innerText = "DB 접근 오류 (" + err.code + ")";
+        document.getElementById('device-state-tag').innerHTML = 
+          `<span style="color: #f87171">⚠️ Firestore 권한 오류 (${err.code}): 보안 규칙을 확인해 주세요.</span>`;
       });
     }
 
