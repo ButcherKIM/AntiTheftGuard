@@ -126,7 +126,10 @@ class PeerConnectionManager(
         return peerConnectionFactory?.createAudioTrack("audio0", audioSource)
     }
 
+    private var activeCapturer: VideoCapturer? = null
+
     fun createVideoTrack(capturer: VideoCapturer): VideoTrack? {
+        activeCapturer = capturer
         val videoSource = peerConnectionFactory?.createVideoSource(capturer.isScreencast)
         capturer.initialize(
             SurfaceTextureHelper.create("CaptureThread", eglBase!!.eglBaseContext),
@@ -137,7 +140,18 @@ class PeerConnectionManager(
         return peerConnectionFactory?.createVideoTrack("video0", videoSource)
     }
 
+    fun stopCapture() {
+        try {
+            activeCapturer?.stopCapture()
+            activeCapturer?.dispose()
+            activeCapturer = null
+        } catch (e: Exception) {
+            Log.e(TAG, "Error stopping capturer", e)
+        }
+    }
+
     fun close() {
+        stopCapture()
         peerConnection?.close()
         peerConnection?.dispose()
         peerConnectionFactory?.dispose()
@@ -152,5 +166,37 @@ class PeerConnectionManager(
         override fun onSetSuccess() {}
         override fun onCreateFailure(error: String?) { Log.e("SDP", "실패: $error") }
         override fun onSetFailure(error: String?) { Log.e("SDP", "실패: $error") }
+    }
+}
+
+object CameraHelper {
+    private const val TAG = "CameraHelper"
+
+    fun createCameraCapturer(context: Context, preferFront: Boolean): VideoCapturer? {
+        val enumerator = Camera2Enumerator(context)
+        val deviceNames = enumerator.deviceNames
+
+        // 1. 요청된 방향(전면 또는 후면) 우선 탐색
+        for (name in deviceNames) {
+            if (preferFront && enumerator.isFrontFacing(name)) {
+                Log.d(TAG, "전면 카메라 선택: $name")
+                return enumerator.createCapturer(name, null)
+            } else if (!preferFront && enumerator.isBackFacing(name)) {
+                Log.d(TAG, "후면 카메라 선택: $name")
+                return enumerator.createCapturer(name, null)
+            }
+        }
+
+        // 2. 일치하는 카메라가 없을 경우 사용 가능한 첫 번째 카메라로 폴백
+        for (name in deviceNames) {
+            val capturer = enumerator.createCapturer(name, null)
+            if (capturer != null) {
+                Log.d(TAG, "폴백 카메라 선택: $name")
+                return capturer
+            }
+        }
+
+        Log.e(TAG, "사용 가능한 카메라를 찾을 수 없습니다.")
+        return null
     }
 }

@@ -104,6 +104,23 @@ class MainActivity : AppCompatActivity() {
         binding.btnBatteryOptimization.setOnClickListener {
             requestBatteryOptimizationExemption()
         }
+
+        // 다른 앱 위에 표시 (원격 카메라 오버레이) 권한
+        binding.btnOverlayPermission.setOnClickListener {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                if (!Settings.canDrawOverlays(this)) {
+                    val intent = Intent(
+                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        Uri.parse("package:$packageName")
+                    )
+                    startActivity(intent)
+                } else {
+                    Toast.makeText(this, "이미 원격 카메라(다른 앱 위에 표시) 권한이 허용되어 있습니다! 👍", Toast.LENGTH_SHORT).show()
+                }
+            } else {
+                Toast.makeText(this, "권한이 이미 허용되어 있습니다.", Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
     private fun toggleGpsService() {

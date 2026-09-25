@@ -54,6 +54,15 @@ class FirestoreManager {
     suspend fun updateFcmToken(deviceId: String, token: String): Result<Unit> = runCatching {
         db.collection("devices").document(deviceId).update("fcmToken", token).await()
     }
+
+    suspend fun updateDeviceStatus(deviceId: String, lastSeen: Long, batteryLevel: Int): Result<Unit> = runCatching {
+        db.collection("devices").document(deviceId).update(
+            mapOf(
+                "lastSeen" to lastSeen,
+                "batteryLevel" to batteryLevel
+            )
+        ).await()
+    }
     
     suspend fun getUserDevices(userId: String): Result<List<DeviceInfo>> = runCatching {
         val snapshot = db.collection("devices").whereEqualTo("ownerId", userId).get().await()

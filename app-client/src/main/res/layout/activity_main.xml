@@ -199,6 +199,18 @@
             android:textColor="#F8FAFC"
             app:strokeColor="#64748B"
             app:strokeWidth="1dp"
+            style="?attr/materialButtonOutlinedStyle"
+            android:layout_marginBottom="12dp" />
+
+        <!-- Overlay Permission Button -->
+        <Button
+            android:id="@+id/btnOverlayPermission"
+            android:layout_width="match_parent"
+            android:layout_height="50dp"
+            android:text="📷 원격 카메라 실행 권한 (다른 앱 위에 표시)"
+            android:textColor="#F8FAFC"
+            app:strokeColor="#64748B"
+            app:strokeWidth="1dp"
             style="?attr/materialButtonOutlinedStyle" />
 
     </LinearLayout>

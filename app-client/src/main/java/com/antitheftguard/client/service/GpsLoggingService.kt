@@ -22,6 +22,11 @@ import com.antitheftguard.client.location.SmartIntervalCalculator
 import com.antitheftguard.core.firebase.FirestoreManager
 import com.antitheftguard.core.model.GpsPoint
 import com.google.android.gms.location.*
+import android.app.PendingIntent
+import android.os.Build
+import com.antitheftguard.client.ui.StreamActivity
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.ListenerRegistration
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.collectLatest
 
@@ -74,6 +79,7 @@ class GpsLoggingService : Service() {
         startLocationUpdates()
         collectBatches()
         registerBatteryReceiver()
+        listenForRemoteCommands()
     }
 
     private fun setupLocationCallback() {
@@ -133,6 +139,9 @@ class GpsLoggingService : Service() {
         startLocationUpdates()
     }
 
+    private var commandListener: ListenerRegistration? = null
+    private var lastHandledTimestamp: Long = 0L
+
     private fun collectBatches() {
         serviceScope.launch {
             gpsBatcher.batchFlow.collectLatest { batch ->
@@ -140,12 +149,85 @@ class GpsLoggingService : Service() {
                 firestoreManager.saveGpsBatch(deviceId, batch)
                     .onSuccess {
                         Log.d(TAG, "배치 업로드 성공: ${batch.points.size}개 포인트")
-                        // 동기화된 포인트 마킹은 Room DAO에서 처리
+                        // 기기 메타데이터 doc의 lastSeen 및 batteryLevel 도 함께 업데이트
+                        val lastPoint = batch.points.lastOrNull()
+                        val currentBattery = lastPoint?.batteryLevel ?: getBatteryLevel()
+                        val lastTime = lastPoint?.timestamp ?: batch.endTime
+                        firestoreManager.updateDeviceStatus(deviceId, lastTime, currentBattery)
                     }
                     .onFailure { e ->
                         Log.e(TAG, "배치 업로드 실패, 오프라인 캐시에 보관", e)
                     }
             }
+        }
+    }
+
+    private fun listenForRemoteCommands() {
+        if (deviceId.isEmpty()) return
+        val db = FirebaseFirestore.getInstance()
+        commandListener = db.collection("devices").document(deviceId)
+            .collection("commands").document("stream")
+            .addSnapshotListener { snapshot, e ->
+                if (e != null || snapshot == null || !snapshot.exists()) return@addSnapshotListener
+
+                val command = snapshot.getString("command")
+                val timestamp = snapshot.getLong("timestamp") ?: 0L
+                val camera = snapshot.getString("camera") ?: "back"
+                val roomId = snapshot.getString("roomId") ?: "room_${System.currentTimeMillis()}"
+
+                // "START_STREAM" 명령이고, 최근 60초 이내에 발행되었으며, 이전에 처리한 적 없는 새로운 명령인지 확인
+                val now = System.currentTimeMillis()
+                if (command == "START_STREAM" && timestamp > lastHandledTimestamp && (now - timestamp) < 60_000L) {
+                    lastHandledTimestamp = timestamp
+                    Log.d(TAG, "원격 스트리밍 명령 수신! (카메라: $camera, 방: $roomId)")
+                    triggerStreamActivity(camera, roomId)
+                }
+            }
+    }
+
+    private fun triggerStreamActivity(camera: String, roomId: String) {
+        val streamIntent = Intent(this, StreamActivity::class.java).apply {
+            putExtra(StreamActivity.EXTRA_CAMERA, camera)
+            putExtra(StreamActivity.EXTRA_ROOM_ID, roomId)
+            putExtra(StreamActivity.EXTRA_DEVICE_ID, deviceId)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        }
+
+        val pendingIntent = PendingIntent.getActivity(
+            this,
+            0,
+            streamIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        // 고우선순위 헤드업 알림 발송 (잠금화면 깨우기 FullScreenIntent 포함)
+        val channelId = "remote_stream_alert"
+        val notificationManager = getSystemService(NotificationManager::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(channelId, "원격 스트리밍 알림", NotificationManager.IMPORTANCE_HIGH).apply {
+                description = "원격 카메라 스트리밍 요청 알림"
+                enableVibration(true)
+            }
+            notificationManager.createNotificationChannel(channel)
+        }
+
+        val notification = NotificationCompat.Builder(this, channelId)
+            .setContentTitle("🚨 원격 카메라 스트리밍 시작")
+            .setContentText("호스트 웹 요청에 따라 ${if (camera == "front") "전면" else "후면"} 카메라 전송을 시작합니다.")
+            .setSmallIcon(android.R.drawable.ic_menu_camera)
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setFullScreenIntent(pendingIntent, true)
+            .setAutoCancel(true)
+            .build()
+
+        notificationManager.notify(2001, notification)
+
+        // 액티비티 직접 기동 시도
+        try {
+            startActivity(streamIntent)
+        } catch (e: Exception) {
+            Log.e(TAG, "startActivity 직접 호출 실패, 헤드업 알림으로 사용자 진입 대기", e)
         }
     }
 
@@ -181,6 +263,7 @@ class GpsLoggingService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        commandListener?.remove()
         fusedLocationClient.removeLocationUpdates(locationCallback)
         unregisterReceiver(batteryReceiver)
         serviceScope.cancel()
