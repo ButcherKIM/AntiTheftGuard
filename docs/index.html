@@ -528,6 +528,17 @@
             <div class="stream-timer" id="stream-timer">03:00</div>
           </div>
 
+          <!-- Camera Selection Dropdown -->
+          <div style="display: flex; flex-direction: column; gap: 6px;">
+            <label style="font-size: 0.8rem; color: var(--text-muted); font-weight: 600;">
+              <i class="fa-solid fa-camera"></i> 촬영 카메라 선택:
+            </label>
+            <select id="select-camera" style="width: 100%; padding: 11px 14px; background: var(--bg-dark); color: var(--text-main); border: 1px solid var(--border); border-radius: 8px; font-size: 0.9rem; font-weight: 600; outline: none; cursor: pointer;">
+              <option value="back">📷 후면 카메라 (기본)</option>
+              <option value="front">🤳 전면 카메라 (셀카)</option>
+            </select>
+          </div>
+
           <!-- Action Buttons -->
           <button class="btn-action-primary" id="btn-start-stream">
             <i class="fa-solid fa-tower-broadcast"></i> 3분간 실시간 스트리밍 요청
@@ -928,32 +939,141 @@
       stopRemoteStream();
     });
 
+    let signalingPollInterval = null;
+
     async function startRemoteStream(deviceId) {
       btnStart.disabled = true;
-      btnStart.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 연결 요청 신호 전송 중...`;
+      btnStart.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 기기 연결 신호 전송 중...`;
 
+      const cameraChoice = document.getElementById('select-camera') ? document.getElementById('select-camera').value : 'back';
       const roomId = "room_" + Date.now();
 
       try {
-        // Send request to Firestore signaling subcollection
-        await fetch(`${REST_BASE}/devices/${deviceId}/signaling/${roomId}`, {
+        // 1) WebRTC PeerConnection 생성
+        if (peerConnection) {
+          peerConnection.close();
+          peerConnection = null;
+        }
+        peerConnection = new RTCPeerConnection(rtcConfig);
+
+        // WebRTC 수신 트랙 처리 (화면 표시)
+        peerConnection.ontrack = (event) => {
+          console.log("영상/오디오 트랙 수신 성공!", event.streams);
+          if (event.streams && event.streams[0]) {
+            remoteVideo.srcObject = event.streams[0];
+            placeholder.style.display = 'none';
+            liveBadge.style.display = 'flex';
+            timerElem.style.display = 'block';
+            btnStart.style.display = 'none';
+            btnStop.style.display = 'flex';
+            btnRecord.style.display = 'flex';
+            startStreamTimer(180); // 3분 타이머 시작
+          }
+        };
+
+        // 호스트측 ICE 후보군 전송
+        peerConnection.onicecandidate = (event) => {
+          if (event.candidate) {
+            fetch(`${REST_BASE}/devices/${deviceId}/signaling/${roomId}/candidates`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                fields: {
+                  sender: { stringValue: "host" },
+                  candidate: { stringValue: event.candidate.candidate },
+                  sdpMid: { stringValue: event.candidate.sdpMid || "" },
+                  sdpMLineIndex: { integerValue: String(event.candidate.sdpMLineIndex || 0) },
+                  timestamp: { integerValue: String(Date.now()) }
+                }
+              })
+            }).catch(e => console.warn("Candidate send error:", e));
+          }
+        };
+
+        // 2) 폰으로 실시간 명령(commands/stream) 전송 (카메라 선택 포함)
+        await fetch(`${REST_BASE}/devices/${deviceId}/commands/stream`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             fields: {
-              request: { stringValue: "START_STREAM" },
-              createdAt: { integerValue: String(Date.now()) }
+              command: { stringValue: "START_STREAM" },
+              camera: { stringValue: cameraChoice },
+              roomId: { stringValue: roomId },
+              timestamp: { integerValue: String(Date.now()) }
             }
           })
         });
 
-        alert(`기기(${deviceId})로 실시간 스트리밍 시작 신호를 전달했습니다!\n원격 카메라가 활성화되면 화면이 표시됩니다.`);
-        btnStart.style.display = 'none';
-        btnStop.style.display = 'flex';
-        btnRecord.style.display = 'flex';
-        liveBadge.style.display = 'flex';
-        timerElem.style.display = 'block';
-        startStreamTimer(180); // 3 minutes
+        btnStart.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 기기 카메라 응답 대기 중...`;
+
+        // 3) 안드로이드 폰의 Offer SDP 및 ICE 후보군 폴링 감시
+        let hasReceivedOffer = false;
+        const processedCandidateNames = new Set();
+
+        if (signalingPollInterval) clearInterval(signalingPollInterval);
+
+        signalingPollInterval = setInterval(async () => {
+          try {
+            // A. Offer 수신 확인
+            if (!hasReceivedOffer) {
+              const roomRes = await fetch(`${REST_BASE}/devices/${deviceId}/signaling/${roomId}`);
+              if (roomRes.ok) {
+                const roomDoc = await roomRes.json();
+                const parsed = parseFirestoreDoc(roomDoc);
+                if (parsed && parsed.offer) {
+                  hasReceivedOffer = true;
+                  btnStart.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 영상 수신 채널 협상 중...`;
+                  
+                  const offerDesc = new RTCSessionDescription({ type: 'offer', sdp: parsed.offer });
+                  await peerConnection.setRemoteDescription(offerDesc);
+
+                  const answer = await peerConnection.createAnswer();
+                  await peerConnection.setLocalDescription(answer);
+
+                  // Answer 회신 등록
+                  await fetch(`${REST_BASE}/devices/${deviceId}/signaling/${roomId}?updateMask.fieldPaths=answer`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      fields: {
+                        answer: { stringValue: answer.sdp }
+                      }
+                    })
+                  });
+                  console.log("Answer 전송 완료!");
+                }
+              }
+            }
+
+            // B. 클라이언트측 ICE Candidate 수신
+            const candRes = await fetch(`${REST_BASE}/devices/${deviceId}/signaling/${roomId}/candidates`);
+            if (candRes.ok) {
+              const candData = await candRes.json();
+              const docs = candData.documents || [];
+              for (const doc of docs) {
+                const parsed = parseFirestoreDoc(doc);
+                if (parsed && parsed.sender === "client" && !processedCandidateNames.has(doc.name)) {
+                  processedCandidateNames.add(doc.name);
+                  if (peerConnection && peerConnection.remoteDescription) {
+                    try {
+                      const cand = new RTCIceCandidate({
+                        candidate: parsed.candidate,
+                        sdpMid: parsed.sdpMid || "",
+                        sdpMLineIndex: parsed.sdpMLineIndex || 0
+                      });
+                      await peerConnection.addIceCandidate(cand);
+                    } catch (ce) {
+                      console.warn("ICE error:", ce);
+                    }
+                  }
+                }
+              }
+            }
+          } catch (pollErr) {
+            console.warn("Signaling poll error:", pollErr);
+          }
+        }, 1000);
+
       } catch (e) {
         console.error("Signaling error:", e);
         alert("스트리밍 요청 전송 실패: " + e.message);
@@ -978,6 +1098,10 @@
 
     function stopRemoteStream() {
       clearInterval(streamCountdown);
+      if (signalingPollInterval) {
+        clearInterval(signalingPollInterval);
+        signalingPollInterval = null;
+      }
       if (peerConnection) {
         peerConnection.close();
         peerConnection = null;
