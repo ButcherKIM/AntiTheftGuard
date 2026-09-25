@@ -745,27 +745,43 @@
       }, 3000);
     }
 
+    // 실시간 수신 시간 포맷팅 함수 (초 단위 경과 시간 표시)
+    let lastRecordedTimestamp = 0;
+    function formatLastSeen(ts) {
+      if (!ts) return "--";
+      const date = new Date(ts);
+      const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      const diffSec = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+
+      if (diffSec < 10) return `${timeStr} (방금 전)`;
+      if (diffSec < 60) return `${timeStr} (${diffSec}초 전)`;
+      if (diffSec < 3600) return `${timeStr} (${Math.floor(diffSec / 60)}분 전)`;
+      return `${timeStr} (${Math.floor(diffSec / 3600)}시간 전)`;
+    }
+
+    // 1초마다 '방금 전 / N초 전' 상대 시간을 부드럽게 갱신
+    setInterval(() => {
+      if (lastRecordedTimestamp > 0) {
+        document.getElementById('val-last-seen').innerText = formatLastSeen(lastRecordedTimestamp);
+      }
+    }, 1000);
+
     async function syncDeviceData(deviceId) {
       try {
-        // 1) 기기 메타데이터 조회 (배터리, 기기 모델명, 마지막 접속 시간)
         let deviceName = "";
+        let bestBattery = null;
+        let newestTimestamp = 0;
+
+        // 1) 기기 메타데이터 조회
         try {
           const devRes = await fetch(`${REST_BASE}/devices/${deviceId}`);
           if (devRes.ok) {
             const devDoc = await devRes.json();
             const devData = parseFirestoreDoc(devDoc);
             if (devData) {
-              if (devData.batteryLevel !== undefined) {
-                document.getElementById('val-battery').innerText = `${devData.batteryLevel}%`;
-                document.getElementById('val-battery-bar').style.width = `${devData.batteryLevel}%`;
-              }
-              if (devData.lastSeen) {
-                const date = new Date(devData.lastSeen);
-                document.getElementById('val-last-seen').innerText = date.toLocaleTimeString();
-              }
-              if (devData.deviceName) {
-                deviceName = devData.deviceName;
-              }
+              if (devData.deviceName) deviceName = devData.deviceName;
+              if (devData.batteryLevel !== undefined) bestBattery = devData.batteryLevel;
+              if (devData.lastSeen) newestTimestamp = Math.max(newestTimestamp, devData.lastSeen);
             }
           }
         } catch (e) {
@@ -810,18 +826,24 @@
           }
         }
 
-        // 3) GPS 포인트 취합 및 렌더링
+        // 3) GPS 포인트 취합
         const allPoints = [];
         batches.forEach(batch => {
-          if (batch && Array.isArray(batch.points)) {
-            batch.points.forEach(pt => {
-              if (pt && typeof pt.latitude === 'number' && typeof pt.longitude === 'number') {
-                allPoints.push(pt);
-              }
-            });
+          if (batch) {
+            if (batch.endTime) newestTimestamp = Math.max(newestTimestamp, batch.endTime);
+            if (batch.startTime) newestTimestamp = Math.max(newestTimestamp, batch.startTime);
+
+            if (Array.isArray(batch.points)) {
+              batch.points.forEach(pt => {
+                if (pt && typeof pt.latitude === 'number' && typeof pt.longitude === 'number') {
+                  allPoints.push(pt);
+                }
+              });
+            }
           }
         });
 
+        // 4) UI 일괄 업데이트 (값 덮어쓰기 깜빡임 방지)
         if (allPoints.length > 0) {
           // 시간순 정렬 (과거 -> 최신)
           allPoints.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
@@ -836,13 +858,12 @@
 
           document.getElementById('val-speed').innerText = `${((latest.speed || 0) * 3.6).toFixed(1)} km/h`;
           document.getElementById('val-accuracy').innerText = `±${Math.round(latest.accuracy || 0)} m`;
-          
+
           if (latest.batteryLevel !== undefined) {
-            document.getElementById('val-battery').innerText = `${latest.batteryLevel}%`;
-            document.getElementById('val-battery-bar').style.width = `${latest.batteryLevel}%`;
+            bestBattery = latest.batteryLevel;
           }
           if (latest.timestamp) {
-            document.getElementById('val-last-seen').innerText = new Date(latest.timestamp).toLocaleTimeString();
+            newestTimestamp = Math.max(newestTimestamp, latest.timestamp);
           }
 
           setOnlineStatus(true, "실시간 수신 중 🟢");
@@ -853,6 +874,17 @@
           const devLabel = deviceName ? ` (${deviceName})` : "";
           document.getElementById('device-state-tag').innerHTML = 
             `추적 대상: <strong style="color: #60a5fa">${deviceId}</strong>${devLabel} · GPS 데이터 대기 중...`;
+        }
+
+        // 배터리 및 마지막 수신 시간 단일 업데이트
+        if (bestBattery !== null) {
+          document.getElementById('val-battery').innerText = `${bestBattery}%`;
+          document.getElementById('val-battery-bar').style.width = `${bestBattery}%`;
+        }
+
+        if (newestTimestamp > 0) {
+          lastRecordedTimestamp = newestTimestamp;
+          document.getElementById('val-last-seen').innerText = formatLastSeen(newestTimestamp);
         }
       } catch (err) {
         console.error("Sync error:", err);
