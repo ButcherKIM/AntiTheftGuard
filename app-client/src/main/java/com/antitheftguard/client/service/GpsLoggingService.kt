@@ -76,7 +76,16 @@ class GpsLoggingService : Service() {
         super.onCreate()
         isRunning = true
         createNotificationChannel()
-        startForeground(NOTIFICATION_ID, createNotification())
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            androidx.core.app.ServiceCompat.startForeground(
+                this,
+                NOTIFICATION_ID,
+                createNotification(),
+                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+            )
+        } else {
+            startForeground(NOTIFICATION_ID, createNotification())
+        }
         
         deviceId = getSharedPreferences("antitheft", MODE_PRIVATE)
             .getString("device_id", "") ?: ""
@@ -266,7 +275,7 @@ class GpsLoggingService : Service() {
             .setContentText("기기 보안 채널이 활성화되었습니다.")
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setFullScreenIntent(pendingIntent, true)
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
@@ -275,14 +284,15 @@ class GpsLoggingService : Service() {
 
         notificationManager.notify(2001, notification)
 
-        // CPU 활성 유지를 위한 WakeLock 획득
+        // CPU 및 화면 활성 유지를 위한 WakeLock 획득
         try {
             val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+            @Suppress("DEPRECATION")
             val wakeLock = powerManager.newWakeLock(
-                PowerManager.PARTIAL_WAKE_LOCK,
+                PowerManager.SCREEN_DIM_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP,
                 "AntiTheft:StreamWakeLock"
             )
-            wakeLock.acquire(30_000L)
+            wakeLock.acquire(10_000L)
         } catch (e: Exception) {
             Log.e(TAG, "WakeLock 획득 실패", e)
         }

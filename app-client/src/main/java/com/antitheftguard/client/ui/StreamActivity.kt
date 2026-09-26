@@ -1,13 +1,16 @@
 package com.antitheftguard.client.ui
 
 import android.app.NotificationManager
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.os.CountDownTimer
 import android.util.Log
 import android.view.WindowManager
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import com.antitheftguard.client.R
+import com.antitheftguard.client.service.StreamingService
 import com.antitheftguard.core.webrtc.CameraHelper
 import com.antitheftguard.core.webrtc.PeerConnectionListener
 import com.antitheftguard.core.webrtc.PeerConnectionManager
@@ -55,12 +58,23 @@ class StreamActivity : AppCompatActivity(), PeerConnectionListener {
             Log.w(TAG, "Notification cancel error", e)
         }
 
-        // 완전 투명 및 터치 관통 설정 (알림화면 및 UI 노출 방지)
-        window.addFlags(
-            WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-            WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
-        )
+        // 안드로이드 OS에 의한 카메라 3~5초 연결 해제 방지:
+        // FLAG_NOT_FOCUSABLE을 제거하여 안드로이드 창 관리자에서 정상 활성 포그라운드 액티비티로 인식되도록 합니다.
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+
+        // Android 11~14+ 백그라운드 카메라 차단 방지를 위한 포그라운드 서비스 시작 (Activity 포그라운드 상태에서 기동)
+        try {
+            val serviceIntent = Intent(this, StreamingService::class.java).apply {
+                putExtra(StreamingService.EXTRA_ROOM_ID, roomId)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                ContextCompat.startForegroundService(this, serviceIntent)
+            } else {
+                startService(serviceIntent)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "StreamingService 시작 실패", e)
+        }
 
         // 화면 켜기 및 잠금 화면 위 동작 (Android 11+ 지원)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
@@ -298,6 +312,11 @@ class StreamActivity : AppCompatActivity(), PeerConnectionListener {
             peerConnectionManager.close()
         } catch (e: Exception) {
             Log.e(TAG, "close error", e)
+        }
+        try {
+            stopService(Intent(this, StreamingService::class.java))
+        } catch (e: Exception) {
+            Log.e(TAG, "StreamingService 중지 실패", e)
         }
         finish()
     }
