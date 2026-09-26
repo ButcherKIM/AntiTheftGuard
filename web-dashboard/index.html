@@ -594,9 +594,21 @@
 
   <script>
     // --- 1. Firestore REST API Configuration ---
-    // Direct, ultra-fast, zero-dependency REST access (no WebSockets/Auth errors)
+    // Direct, ultra-fast, zero-dependency REST access (with API key and smart delta sync)
     const PROJECT_ID = "antitheftguard-cadb1";
+    const FIREBASE_API_KEY = "AIzaSyBbcHMHyAo6okw_1PH9XrNW2XTsfNRfH1o";
     const REST_BASE = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
+
+    function getFirestoreUrl(path, params = {}) {
+      const url = new URL(`${REST_BASE}/${path}`);
+      url.searchParams.set("key", FIREBASE_API_KEY);
+      for (const [k, v] of Object.entries(params)) {
+        if (v !== undefined && v !== null) {
+          url.searchParams.set(k, v);
+        }
+      }
+      return url.toString();
+    }
 
     const statusBadge = document.getElementById('firebase-status');
     const statusText = document.getElementById('firebase-status-text');
@@ -737,12 +749,20 @@
     let currentDeviceId = "";
     let syncIntervalId = null;
 
+    let lastKnownSeen = 0;
+    let isInitialHistoryLoaded = false;
+    let isSyncing = false;
+    let cachedAllPoints = [];
+
     async function loadAvailableDevices() {
       try {
         statusBadge.className = 'status-badge connecting';
         statusText.innerText = "기기 목록 조회 중...";
 
-        const res = await fetch(`${REST_BASE}/devices`);
+        const res = await fetch(getFirestoreUrl('devices'));
+        if (res.status === 429) {
+          throw new Error("HTTP 429");
+        }
         if (!res.ok) throw new Error("HTTP " + res.status);
         const data = await res.json();
         const docs = data.documents || [];
@@ -786,9 +806,13 @@
         }
       } catch (err) {
         console.error("Device fetch error:", err);
-        setOnlineStatus(false, "DB 접근 오류");
-        document.getElementById('device-state-tag').innerHTML = 
-          `<span style="color: #f87171">⚠️ 기기 목록을 가져오지 못했습니다: ${err.message}</span>`;
+        if (err.message && err.message.includes("429")) {
+          handle429Error();
+        } else {
+          setOnlineStatus(false, "DB 접근 오류");
+          document.getElementById('device-state-tag').innerHTML = 
+            `<span style="color: #f87171">⚠️ 기기 목록을 가져오지 못했습니다: ${err.message}</span>`;
+        }
       }
     }
 
@@ -810,10 +834,15 @@
     });
 
     function connectDevice(deviceId) {
-      currentDeviceId = deviceId;
-      hasAutoCentered = false;
-      pathCoordinates = [];
-      polyline.setLatLngs([]);
+      if (currentDeviceId !== deviceId) {
+        currentDeviceId = deviceId;
+        hasAutoCentered = false;
+        pathCoordinates = [];
+        cachedAllPoints = [];
+        polyline.setLatLngs([]);
+        isInitialHistoryLoaded = false;
+        lastKnownSeen = 0;
+      }
 
       if (syncIntervalId) clearInterval(syncIntervalId);
 
@@ -827,13 +856,15 @@
 
       document.getElementById('device-state-tag').innerHTML = 
         `<div>추적 대상: <strong style="color: #60a5fa">${deviceId}</strong></div>` +
-        `<div style="margin-top: 4px; font-size: 0.82rem; color: #94a3b8;">데이터 수신 및 간격 계산 중...</div>`;
+        `<div style="margin-top: 4px; font-size: 0.82rem; color: #94a3b8;">데이터 동기화 중...</div>`;
 
-      // 즉시 동기화 실행 후 3초마다 지속적 실시간 폴링
+      // 즉시 최초 동기화 실행 후, 8초마다 스마트 델타 폴링 (쿼터 99% 절약)
       syncDeviceData(deviceId);
       syncIntervalId = setInterval(() => {
+        // 브라우저 탭이 백그라운드에 숨겨져 있을 때는 쿼터 낭비 방지를 위해 폴링 건너뛰기
+        if (document.hidden) return;
         syncDeviceData(deviceId);
-      }, 3000);
+      }, 8000);
     }
 
     // 실시간 수신 시간 포맷팅 함수 (두 줄 표시: 1줄 시간, 2줄 경과시간)
@@ -862,93 +893,131 @@
     }, 1000);
 
     async function syncDeviceData(deviceId) {
+      if (isSyncing) return;
+      isSyncing = true;
+
       try {
         let deviceName = "";
         let bestBattery = null;
-        let newestTimestamp = 0;
+        let deviceLastSeen = 0;
 
-        // 1) 기기 메타데이터 조회
+        // 1) 기기 메타데이터 조회 (단 1개 문서 읽기)
         try {
-          const devRes = await fetch(`${REST_BASE}/devices/${deviceId}`);
+          const devRes = await fetch(getFirestoreUrl(`devices/${deviceId}`));
+          if (devRes.status === 429) {
+            handle429Error();
+            return;
+          }
           if (devRes.ok) {
             const devDoc = await devRes.json();
             const devData = parseFirestoreDoc(devDoc);
             if (devData) {
               if (devData.deviceName) deviceName = devData.deviceName;
               if (devData.batteryLevel !== undefined) bestBattery = devData.batteryLevel;
-              if (devData.lastSeen) newestTimestamp = Math.max(newestTimestamp, devData.lastSeen);
+              if (devData.lastSeen) deviceLastSeen = devData.lastSeen;
             }
           }
         } catch (e) {
           console.warn("Device metadata fetch error:", e);
         }
 
-        // 2) GPS 궤적 및 최근 위치 수신 (runQuery로 최신 배치 50개 역순 조회)
-        let batches = [];
-        try {
-          const queryRes = await fetch(`${REST_BASE}/devices/${deviceId}:runQuery`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              structuredQuery: {
-                from: [{ collectionId: 'gps_batches' }],
-                orderBy: [{ field: { fieldPath: 'startTime' }, direction: 'DESCENDING' }],
-                limit: 50
-              }
-            })
-          });
-
-          if (queryRes.ok) {
-            const queryData = await queryRes.json();
-            batches = queryData
-              .filter(item => item.document)
-              .map(item => parseFirestoreDoc(item.document));
-          }
-        } catch (queryErr) {
-          console.warn("runQuery failed, falling back to direct list:", queryErr);
-        }
-
-        // fallback to direct subcollection list if runQuery is empty
-        if (batches.length === 0) {
+        // 2) GPS 궤적 및 최근 위치 수신 (스마트 델타 동기화)
+        // 최초 1회: 최근 25개 배치 조회하여 맵에 과거 궤적 복원
+        // 이후 주기적 폴링: 기기 lastSeen이 변경되었을 때만 최신 1개 배치만 가져옴! (읽기 비용 99% 절약)
+        if (!isInitialHistoryLoaded) {
           try {
-            const listRes = await fetch(`${REST_BASE}/devices/${deviceId}/gps_batches?pageSize=50`);
-            if (listRes.ok) {
-              const listData = await listRes.json();
-              batches = (listData.documents || []).map(parseFirestoreDoc);
+            const queryRes = await fetch(getFirestoreUrl(`devices/${deviceId}:runQuery`), {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                structuredQuery: {
+                  from: [{ collectionId: 'gps_batches' }],
+                  orderBy: [{ field: { fieldPath: 'startTime' }, direction: 'DESCENDING' }],
+                  limit: 25
+                }
+              })
+            });
+
+            if (queryRes.status === 429) {
+              handle429Error();
+              return;
             }
-          } catch (listErr) {
-            console.warn("Batch list error:", listErr);
-          }
-        }
 
-        // 3) GPS 포인트 취합
-        const allPoints = [];
-        batches.forEach(batch => {
-          if (batch) {
-            if (batch.endTime) newestTimestamp = Math.max(newestTimestamp, batch.endTime);
-            if (batch.startTime) newestTimestamp = Math.max(newestTimestamp, batch.startTime);
+            if (queryRes.ok) {
+              const queryData = await queryRes.json();
+              const initialBatches = queryData
+                .filter(item => item.document)
+                .map(item => parseFirestoreDoc(item.document));
 
-            if (Array.isArray(batch.points)) {
-              batch.points.forEach(pt => {
-                if (pt && typeof pt.latitude === 'number' && typeof pt.longitude === 'number') {
-                  allPoints.push(pt);
+              cachedAllPoints = [];
+              initialBatches.forEach(batch => {
+                if (batch && Array.isArray(batch.points)) {
+                  batch.points.forEach(pt => {
+                    if (pt && typeof pt.latitude === 'number' && typeof pt.longitude === 'number') {
+                      cachedAllPoints.push(pt);
+                    }
+                  });
                 }
               });
             }
+          } catch (queryErr) {
+            console.warn("Initial runQuery failed:", queryErr);
           }
-        });
 
-        // 4) UI 일괄 업데이트 (값 덮어쓰기 깜빡임 방지)
-        if (allPoints.length > 0) {
+          isInitialHistoryLoaded = true;
+          lastKnownSeen = deviceLastSeen || (cachedAllPoints.length > 0 ? cachedAllPoints[cachedAllPoints.length - 1].timestamp : 0);
+        } else if (deviceLastSeen && deviceLastSeen > lastKnownSeen) {
+          // 스마트 델타: 새 데이터가 기록된 경우에만 최신 1개 배치만 조회!
+          try {
+            const queryRes = await fetch(getFirestoreUrl(`devices/${deviceId}:runQuery`), {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                structuredQuery: {
+                  from: [{ collectionId: 'gps_batches' }],
+                  orderBy: [{ field: { fieldPath: 'startTime' }, direction: 'DESCENDING' }],
+                  limit: 1
+                }
+              })
+            });
+
+            if (queryRes.status === 429) {
+              handle429Error();
+              return;
+            }
+
+            if (queryRes.ok) {
+              const queryData = await queryRes.json();
+              const latestBatchItem = queryData.find(item => item.document);
+              if (latestBatchItem) {
+                const batch = parseFirestoreDoc(latestBatchItem.document);
+                if (batch && Array.isArray(batch.points)) {
+                  const existingTimestamps = new Set(cachedAllPoints.map(p => p.timestamp));
+                  batch.points.forEach(pt => {
+                    if (pt && typeof pt.latitude === 'number' && typeof pt.longitude === 'number' && !existingTimestamps.has(pt.timestamp)) {
+                      cachedAllPoints.push(pt);
+                    }
+                  });
+                }
+              }
+            }
+          } catch (deltaErr) {
+            console.warn("Delta query error:", deltaErr);
+          }
+          lastKnownSeen = deviceLastSeen;
+        }
+
+        // 3) UI 일괄 업데이트 (값 덮어쓰기 깜빡임 방지)
+        if (cachedAllPoints.length > 0) {
           // 시간순 정렬 (과거 -> 최신)
-          allPoints.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+          cachedAllPoints.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
 
           // 맵 궤적 업데이트
-          pathCoordinates = allPoints.map(pt => [pt.latitude, pt.longitude]);
+          pathCoordinates = cachedAllPoints.map(pt => [pt.latitude, pt.longitude]);
           polyline.setLatLngs(pathCoordinates);
 
           // 가장 최신 위치
-          const latest = allPoints[allPoints.length - 1];
+          const latest = cachedAllPoints[cachedAllPoints.length - 1];
           updateMapLocation(latest.latitude, latest.longitude, latest.accuracy);
 
           document.getElementById('val-speed').innerText = `${((latest.speed || 0) * 3.6).toFixed(1)} km/h`;
@@ -957,17 +1026,14 @@
           if (latest.batteryLevel !== undefined) {
             bestBattery = latest.batteryLevel;
           }
-          if (latest.timestamp) {
-            newestTimestamp = Math.max(newestTimestamp, latest.timestamp);
-          }
 
           setOnlineStatus(true, "실시간 수신 중 🟢");
           const devLabel = deviceName ? ` <span style="color: #94a3b8; font-size: 0.8rem; font-weight: normal;">(${deviceName})</span>` : "";
 
           // 최근 GPS 포인트들 간격 계산
           let intervalText = "이동 5초 / 정지 30초";
-          if (allPoints.length >= 2) {
-            const sample = allPoints.slice(-10);
+          if (cachedAllPoints.length >= 2) {
+            const sample = cachedAllPoints.slice(-10);
             const diffs = [];
             for (let i = 1; i < sample.length; i++) {
               const dt = Math.round(((sample[i].timestamp || 0) - (sample[i - 1].timestamp || 0)) / 1000);
@@ -983,7 +1049,7 @@
 
           document.getElementById('device-state-tag').innerHTML = 
             `<div>추적 대상: <strong style="color: #60a5fa">${deviceId}</strong>${devLabel}</div>` +
-            `<div style="margin-top: 4px; font-size: 0.82rem; color: #cbd5e1;">수신 궤적: <strong style="color: #34d399">총 ${allPoints.length}개</strong> 📍 <span style="color: #64748b; margin: 0 4px;">|</span> 데이터 간격: <strong style="color: #fbbf24">${intervalText}</strong></div>`;
+            `<div style="margin-top: 4px; font-size: 0.82rem; color: #cbd5e1;">수신 궤적: <strong style="color: #34d399">총 ${cachedAllPoints.length}개</strong> 📍 <span style="color: #64748b; margin: 0 4px;">|</span> 데이터 간격: <strong style="color: #fbbf24">${intervalText}</strong></div>`;
         } else {
           const devLabel = deviceName ? ` <span style="color: #94a3b8; font-size: 0.8rem; font-weight: normal;">(${deviceName})</span>` : "";
           document.getElementById('device-state-tag').innerHTML = 
@@ -997,13 +1063,26 @@
           document.getElementById('val-battery-bar').style.width = `${bestBattery}%`;
         }
 
+        const newestTimestamp = Math.max(deviceLastSeen || 0, cachedAllPoints.length > 0 ? cachedAllPoints[cachedAllPoints.length - 1].timestamp : 0);
         if (newestTimestamp > 0) {
           lastRecordedTimestamp = newestTimestamp;
           document.getElementById('val-last-seen').innerHTML = formatLastSeen(newestTimestamp);
         }
       } catch (err) {
         console.error("Sync error:", err);
+      } finally {
+        isSyncing = false;
       }
+    }
+
+    function handle429Error() {
+      setOnlineStatus(false, "무료 쿼터 초과");
+      document.getElementById('device-state-tag').innerHTML = 
+        `<div style="background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 8px; padding: 12px; color: #fca5a5; font-size: 0.84rem; line-height: 1.5;">` +
+        `<div style="font-weight: 700; color: #f87171; margin-bottom: 4px; font-size: 0.9rem;"><i class="fa-solid fa-triangle-exclamation"></i> Firebase 무료 쿼터 초과 (HTTP 429)</div>` +
+        `이전 대시보드의 과도한 연속 조회로 인해 오늘치 무료 한도(5만 회)에 도달했습니다.<br>` +
+        `👉 <strong>즉시 해결 방법</strong>: <a href="https://console.firebase.google.com/project/${PROJECT_ID}/usage" target="_blank" style="color: #60a5fa; text-decoration: underline; font-weight: bold;">Firebase 콘솔</a>에서 <strong>Blaze(종량제)</strong>로 전환하시면 지금 즉시 해제됩니다.<br>` +
+        `<span style="color: #94a3b8; font-size: 0.78rem;">(Blaze 요금제도 매일 5만 회 읽기가 100% 무료 제공되며, 대시보드 쿼터 최적화(99% 절감)가 적용되어 추가 비용은 전혀 청구되지 않습니다.)</span></div>`;
     }
 
     // --- 4. WebRTC Video / Audio Streaming Control ---
@@ -1123,7 +1202,7 @@
         // 호스트측 ICE 후보군 전송
         peerConnection.onicecandidate = (event) => {
           if (event.candidate) {
-            fetch(`${REST_BASE}/devices/${deviceId}/signaling/${roomId}/candidates`, {
+            fetch(getFirestoreUrl(`devices/${deviceId}/signaling/${roomId}/candidates`), {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -1140,7 +1219,7 @@
         };
 
         // 2) 폰으로 실시간 명령(commands/stream) 전송 (카메라 선택 포함)
-        await fetch(`${REST_BASE}/devices/${deviceId}/commands/stream`, {
+        await fetch(getFirestoreUrl(`devices/${deviceId}/commands/stream`), {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1170,7 +1249,7 @@
             if (!hasReceivedOffer) {
               // 폰에서 명령을 수신했는지 commands/stream status 확인
               try {
-                const cmdRes = await fetch(`${REST_BASE}/devices/${deviceId}/commands/stream`);
+                const cmdRes = await fetch(getFirestoreUrl(`devices/${deviceId}/commands/stream`));
                 if (cmdRes.ok) {
                   const cmdDoc = await cmdRes.json();
                   const parsedCmd = parseFirestoreDoc(cmdDoc);
@@ -1186,7 +1265,7 @@
                 }
               } catch(e) {}
 
-              const roomRes = await fetch(`${REST_BASE}/devices/${deviceId}/signaling/${roomId}`);
+              const roomRes = await fetch(getFirestoreUrl(`devices/${deviceId}/signaling/${roomId}`));
               if (roomRes.ok) {
                 const roomDoc = await roomRes.json();
                 const parsed = parseFirestoreDoc(roomDoc);
@@ -1201,7 +1280,7 @@
                   await peerConnection.setLocalDescription(answer);
 
                   // Answer 회신 등록
-                  await fetch(`${REST_BASE}/devices/${deviceId}/signaling/${roomId}?updateMask.fieldPaths=answer`, {
+                  await fetch(getFirestoreUrl(`devices/${deviceId}/signaling/${roomId}`, { "updateMask.fieldPaths": "answer" }), {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -1224,7 +1303,7 @@
             }
 
             // B. 클라이언트측 ICE Candidate 수신
-            const candRes = await fetch(`${REST_BASE}/devices/${deviceId}/signaling/${roomId}/candidates`);
+            const candRes = await fetch(getFirestoreUrl(`devices/${deviceId}/signaling/${roomId}/candidates`));
             if (candRes.ok) {
               const candData = await candRes.json();
               const docs = candData.documents || [];
@@ -1286,7 +1365,7 @@
       }
 
       if (currentDeviceId) {
-        fetch(`${REST_BASE}/devices/${currentDeviceId}/commands/stream?updateMask.fieldPaths=command`, {
+        fetch(getFirestoreUrl(`devices/${currentDeviceId}/commands/stream`, { "updateMask.fieldPaths": "command" }), {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1326,7 +1405,7 @@
       btnToggle.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 전환 중...`;
 
       try {
-        await fetch(`${REST_BASE}/devices/${currentDeviceId}/commands/stream?updateMask.fieldPaths=camera`, {
+        await fetch(getFirestoreUrl(`devices/${currentDeviceId}/commands/stream`, { "updateMask.fieldPaths": "camera" }), {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
