@@ -190,8 +190,11 @@ class StreamActivity : AppCompatActivity(), PeerConnectionListener {
             // 오디오 트랙 추가
             val audioTrack = peerConnectionManager.createAudioTrack()
             if (audioTrack != null) {
+                audioTrack.setEnabled(true)
                 peerConnectionManager.addTrack(audioTrack)
-                Log.d(TAG, "오디오 트랙 추가 완료")
+                Log.d(TAG, "오디오 트랙 추가 완료 (enabled: ${audioTrack.enabled()})")
+            } else {
+                Log.e(TAG, "오디오 트랙 생성 실패")
             }
 
             isStreamingActive = true

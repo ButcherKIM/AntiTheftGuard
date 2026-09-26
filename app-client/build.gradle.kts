@@ -13,13 +13,35 @@ android {
         applicationId = "com.antitheftguard.client"
         minSdk = 26
         targetSdk = 34
-        versionCode = 4
-        versionName = "1.2.3"
+        versionCode = 5
+        versionName = "1.2.4"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
             abiFilters += listOf("arm64-v8a")
         }
     }
+
+    signingConfigs {
+        create("release") {
+            storeFile = file("antitheft-release-key.jks")
+            storePassword = "antitheftguard2024"
+            keyAlias = "antitheft"
+            keyPassword = "antitheftguard2024"
+            enableV1Signing = true
+            enableV2Signing = true
+        }
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
+        }
+        debug {
+            signingConfig = signingConfigs.getByName("release")
+        }
+    }
+
     buildFeatures {
         viewBinding = true
     }

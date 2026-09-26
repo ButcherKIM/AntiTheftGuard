@@ -3,6 +3,7 @@ package com.antitheftguard.core.webrtc
 import android.content.Context
 import android.util.Log
 import org.webrtc.*
+import org.webrtc.audio.JavaAudioDeviceModule
 
 object WebRtcConfig {
     val ICE_SERVERS = listOf(
@@ -31,6 +32,7 @@ class PeerConnectionManager(
 
     private var peerConnectionFactory: PeerConnectionFactory? = null
     private var peerConnection: PeerConnection? = null
+    private var audioDeviceModule: JavaAudioDeviceModule? = null
     private var eglBase: EglBase? = null
 
     fun initialize() {
@@ -40,9 +42,15 @@ class PeerConnectionManager(
             .createInitializationOptions()
         PeerConnectionFactory.initialize(initializationOptions)
 
+        audioDeviceModule = JavaAudioDeviceModule.builder(context)
+            .setUseHardwareAcousticEchoCanceler(true)
+            .setUseHardwareNoiseSuppressor(true)
+            .createAudioDeviceModule()
+
         val options = PeerConnectionFactory.Options()
         peerConnectionFactory = PeerConnectionFactory.builder()
             .setOptions(options)
+            .setAudioDeviceModule(audioDeviceModule)
             .setVideoEncoderFactory(DefaultVideoEncoderFactory(eglBase!!.eglBaseContext, true, true))
             .setVideoDecoderFactory(DefaultVideoDecoderFactory(eglBase!!.eglBaseContext))
             .createPeerConnectionFactory()
@@ -121,9 +129,16 @@ class PeerConnectionManager(
     }
 
     fun createAudioTrack(): AudioTrack? {
-        val audioConstraints = MediaConstraints()
+        val audioConstraints = MediaConstraints().apply {
+            mandatory.add(MediaConstraints.KeyValuePair("googEchoCancellation", "true"))
+            mandatory.add(MediaConstraints.KeyValuePair("googAutoGainControl", "true"))
+            mandatory.add(MediaConstraints.KeyValuePair("googHighpassFilter", "true"))
+            mandatory.add(MediaConstraints.KeyValuePair("googNoiseSuppression", "true"))
+        }
         val audioSource = peerConnectionFactory?.createAudioSource(audioConstraints)
-        return peerConnectionFactory?.createAudioTrack("audio0", audioSource)
+        val audioTrack = peerConnectionFactory?.createAudioTrack("audio0", audioSource)
+        audioTrack?.setEnabled(true)
+        return audioTrack
     }
 
     private var activeCapturer: VideoCapturer? = null
@@ -191,9 +206,15 @@ class PeerConnectionManager(
         peerConnection?.close()
         peerConnection?.dispose()
         peerConnectionFactory?.dispose()
+        try {
+            audioDeviceModule?.release()
+        } catch (e: Exception) {
+            Log.w(TAG, "Error releasing audioDeviceModule", e)
+        }
         eglBase?.release()
         peerConnection = null
         peerConnectionFactory = null
+        audioDeviceModule = null
         eglBase = null
     }
 

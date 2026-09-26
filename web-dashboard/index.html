@@ -547,6 +547,11 @@
             </div>
 
             <div class="stream-timer" id="stream-timer">03:00</div>
+
+            <!-- Audio Toggle Button inside video overlay -->
+            <button id="btn-toggle-audio" type="button" style="display: none; position: absolute; bottom: 10px; right: 10px; z-index: 10; padding: 6px 14px; background: rgba(0, 0, 0, 0.7); border: 1px solid var(--border); border-radius: 20px; color: #fff; font-size: 0.8rem; font-weight: 600; cursor: pointer; align-items: center; gap: 6px; backdrop-filter: blur(4px);">
+              <i class="fa-solid fa-volume-high" style="color: #10b981;"></i> <span>실시간 음성 ON</span>
+            </button>
           </div>
 
           <!-- Camera Selection Dropdown & Live Switch Button -->
@@ -1021,6 +1026,36 @@
     const placeholder = document.getElementById('video-placeholder');
     const liveBadge = document.getElementById('live-badge');
     const timerElem = document.getElementById('stream-timer');
+    const btnAudio = document.getElementById('btn-toggle-audio');
+
+    function updateAudioUi(isPlayingSound) {
+      if (!btnAudio) return;
+      if (isPlayingSound && !remoteVideo.muted) {
+        btnAudio.style.background = 'rgba(16, 185, 129, 0.25)';
+        btnAudio.style.borderColor = '#10b981';
+        btnAudio.innerHTML = `<i class="fa-solid fa-volume-high" style="color: #34d399;"></i> <span>실시간 음성 ON</span>`;
+      } else {
+        btnAudio.style.background = 'rgba(239, 68, 68, 0.35)';
+        btnAudio.style.borderColor = '#ef4444';
+        btnAudio.innerHTML = `<i class="fa-solid fa-volume-xmark" style="color: #f87171;"></i> <span>소리 켜기 (클릭)</span>`;
+      }
+    }
+
+    if (btnAudio) {
+      btnAudio.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (remoteVideo) {
+          if (remoteVideo.muted) {
+            remoteVideo.muted = false;
+            remoteVideo.volume = 1.0;
+            remoteVideo.play().then(() => updateAudioUi(true)).catch(e => console.warn(e));
+          } else {
+            remoteVideo.muted = true;
+            updateAudioUi(false);
+          }
+        }
+      });
+    }
 
     btnStart.addEventListener('click', async () => {
       if (!currentDeviceId) {
@@ -1040,6 +1075,10 @@
       btnStart.disabled = true;
       btnStart.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 기기 연결 신호 전송 중...`;
 
+      // 사용자 클릭 제스처 시점에 오디오 음소거 해제 준비
+      remoteVideo.muted = false;
+      remoteVideo.volume = 1.0;
+
       const cameraChoice = document.getElementById('select-camera') ? document.getElementById('select-camera').value : 'back';
       const roomId = "room_" + Date.now();
 
@@ -1053,7 +1092,7 @@
 
         // WebRTC 수신 트랙 처리 (화면 표시)
         peerConnection.ontrack = (event) => {
-          console.log("영상/오디오 트랙 수신 성공!", event.streams);
+          console.log("영상/오디오 트랙 수신 성공!", event.track.kind, event.streams);
           if (event.streams && event.streams[0]) {
             remoteVideo.srcObject = event.streams[0];
             placeholder.style.display = 'none';
@@ -1063,7 +1102,21 @@
             btnStop.style.display = 'flex';
             btnRecord.style.display = 'flex';
             document.getElementById('btn-toggle-camera').style.display = 'inline-flex';
+            if (btnAudio) btnAudio.style.display = 'inline-flex';
             startStreamTimer(180); // 3분 타이머 시작
+
+            // 소리 자동 재생 시도 (브라우저 정책 대응)
+            remoteVideo.muted = false;
+            remoteVideo.volume = 1.0;
+            remoteVideo.play().then(() => {
+              console.log("미디어 재생 성공 (음성 활성)");
+              updateAudioUi(true);
+            }).catch(e => {
+              console.warn("브라우저 자동재생 정책으로 음소거 선재생 시작:", e);
+              remoteVideo.muted = true;
+              remoteVideo.play();
+              updateAudioUi(false);
+            });
           }
         };
 
@@ -1254,6 +1307,7 @@
       btnStop.style.display = 'none';
       btnRecord.style.display = 'none';
       document.getElementById('btn-toggle-camera').style.display = 'none';
+      if (btnAudio) btnAudio.style.display = 'none';
     }
 
     // 실시간 카메라 옵션 전환 (스트리밍 중 즉각 전/후면 전환 반영, 상태 감지 및 비디오 멈춤 방지)
