@@ -51,6 +51,7 @@ class GpsLoggingService : Service() {
     private val firestoreManager = FirestoreManager()
     private var isCharging = false
     private var currentSpeed = 0f
+    private var currentInterval: Long = 0L
     private var deviceId: String = ""
 
     private val batteryReceiver = object : BroadcastReceiver() {
@@ -62,7 +63,11 @@ class GpsLoggingService : Service() {
                 else -> isCharging
             }
             if (wasCharging != isCharging) {
-                updateLocationInterval()
+                val newInterval = SmartIntervalCalculator.calculate(currentSpeed, isCharging)
+                if (newInterval != currentInterval) {
+                    currentInterval = newInterval
+                    updateLocationInterval()
+                }
             }
         }
     }
@@ -123,8 +128,12 @@ class GpsLoggingService : Service() {
                         AppDatabase.getInstance(this@GpsLoggingService).gpsPointDao().insert(entity)
                     }
                 }
-                // 속도 변화에 따른 인터벌 조정
-                updateLocationInterval()
+                // 속도 변화에 따른 인터벌 조정 (간격 값이 실제로 바뀔 때만 재등록)
+                val newInterval = SmartIntervalCalculator.calculate(currentSpeed, isCharging)
+                if (newInterval != currentInterval) {
+                    currentInterval = newInterval
+                    updateLocationInterval()
+                }
             }
         }
     }
@@ -137,10 +146,10 @@ class GpsLoggingService : Service() {
             return
         }
         
-        val interval = SmartIntervalCalculator.calculate(currentSpeed, isCharging)
-        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, interval)
-            .setMinUpdateIntervalMillis(interval / 2)
-            .setMaxUpdateDelayMillis(interval * 2)
+        currentInterval = SmartIntervalCalculator.calculate(currentSpeed, isCharging)
+        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, currentInterval)
+            .setMinUpdateIntervalMillis(currentInterval / 2)
+            .setMaxUpdateDelayMillis(currentInterval * 2)
             .build()
         
         fusedLocationClient.requestLocationUpdates(request, locationCallback, Looper.getMainLooper())
@@ -313,7 +322,18 @@ class GpsLoggingService : Service() {
         getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val currentId = getSharedPreferences("antitheft", MODE_PRIVATE)
+            .getString("device_id", "") ?: ""
+        if (currentId.isNotEmpty() && currentId != deviceId) {
+            Log.d(TAG, "기기 ID 동적 변경 감지: $deviceId -> $currentId")
+            deviceId = currentId
+            gpsBatcher = GpsBatcher(deviceId)
+            commandListener?.remove()
+            listenForRemoteCommands()
+        }
+        return START_STICKY
+    }
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {

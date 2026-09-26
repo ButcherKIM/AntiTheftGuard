@@ -171,7 +171,14 @@ class MainActivity : AppCompatActivity() {
             getSharedPreferences("antitheft", Context.MODE_PRIVATE)
                 .edit().putString("device_id", newId).apply()
             registerDeviceToFirestore(newId)
-            Toast.makeText(this, "기기 ID가 '${newId}'(으)로 저장되었습니다.", Toast.LENGTH_SHORT).show()
+
+            // 만약 서비스가 실행 중이라면 새 기기 ID로 즉시 갱신/재시작
+            if (GpsLoggingService.isRunning) {
+                val serviceIntent = Intent(this, GpsLoggingService::class.java)
+                stopService(serviceIntent)
+                ContextCompat.startForegroundService(this, serviceIntent)
+            }
+            Toast.makeText(this, "기기 ID가 '${newId}'(으)로 저장 및 동기화되었습니다.", Toast.LENGTH_SHORT).show()
         }
 
         // GPS 도난 방지 추적 시작 / 중지 버튼
@@ -212,6 +219,13 @@ class MainActivity : AppCompatActivity() {
         val serviceIntent = Intent(this, GpsLoggingService::class.java)
 
         if (!isRunning) {
+            // 시작 전에 현재 입력창의 기기 ID를 먼저 저장
+            val currentInputId = binding.etDeviceId.text.toString().trim()
+            if (currentInputId.isNotEmpty()) {
+                getSharedPreferences("antitheft", Context.MODE_PRIVATE)
+                    .edit().putString("device_id", currentInputId).apply()
+                registerDeviceToFirestore(currentInputId)
+            }
             // 시작
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) 
                 != PackageManager.PERMISSION_GRANTED) {

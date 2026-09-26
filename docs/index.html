@@ -487,9 +487,11 @@
         <div class="section-title"><i class="fa-solid fa-mobile-screen"></i> 추적 기기 선택</div>
         <div class="device-box">
           <div class="input-group">
-            <input type="text" id="target-device-id" placeholder="기기 ID (예: phone_sm-x526n)" />
+            <input type="text" id="target-device-id" list="device-history-list" placeholder="기기 ID (예: kmk 또는 phone_sm-s938n)" />
+            <datalist id="device-history-list"></datalist>
             <button class="map-btn" id="btn-connect-device"><i class="fa-solid fa-link"></i> 연결</button>
           </div>
+          <div id="device-quick-pills" style="display: flex; gap: 6px; flex-wrap: wrap; margin-top: 2px;"></div>
           <div id="device-state-tag" style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.4;">
             기기 검색 및 실시간 상태 동기화 중...
           </div>
@@ -743,7 +745,28 @@
         if (docs.length > 0) {
           const parsedDevices = docs.map(parseFirestoreDoc).filter(Boolean);
           
-          // URL 파라미터 ?device= 가 있으면 우선 사용, 없으면 첫 번째 기기 자동 선택
+          // 가장 최근에 활동한(lastSeen) 기기 순으로 정렬!
+          parsedDevices.sort((a, b) => (b.lastSeen || 0) - (a.lastSeen || 0));
+
+          // 1) datalist 자동 완성 채우기
+          const dataList = document.getElementById('device-history-list');
+          if (dataList) {
+            dataList.innerHTML = parsedDevices.map(d => 
+              `<option value="${d.deviceId}">${d.deviceName ? `(${d.deviceName})` : ''}</option>`
+            ).join('');
+          }
+
+          // 2) 원터치 기기 선택 Pills 렌더링
+          const pillsContainer = document.getElementById('device-quick-pills');
+          if (pillsContainer) {
+            pillsContainer.innerHTML = parsedDevices.map(d => {
+              const label = d.deviceId;
+              const isSelected = d.deviceId === currentDeviceId;
+              return `<button type="button" class="quick-device-pill" onclick="selectQuickDevice('${d.deviceId}')" style="padding: 4px 10px; font-size: 0.78rem; background: ${isSelected ? 'rgba(59, 130, 246, 0.25)' : 'var(--bg-card)'}; border: 1px solid ${isSelected ? 'var(--primary)' : 'var(--border)'}; color: ${isSelected ? '#60a5fa' : '#94a3b8'}; border-radius: 9999px; cursor: pointer; display: flex; align-items: center; gap: 5px; font-weight: 600;"><i class="fa-solid fa-mobile-screen"></i> ${label}</button>`;
+            }).join('');
+          }
+
+          // URL 파라미터 ?device= 가 있으면 우선 사용, 없으면 가장 최근 활동 기기 자동 선택
           const urlParams = new URLSearchParams(window.location.search);
           const targetParam = urlParams.get('device');
           const selected = parsedDevices.find(d => d.deviceId === targetParam) || parsedDevices[0];
@@ -762,6 +785,11 @@
         document.getElementById('device-state-tag').innerHTML = 
           `<span style="color: #f87171">⚠️ 기기 목록을 가져오지 못했습니다: ${err.message}</span>`;
       }
+    }
+
+    function selectQuickDevice(devId) {
+      document.getElementById('target-device-id').value = devId;
+      connectDevice(devId);
     }
 
     document.getElementById('btn-connect-device').addEventListener('click', () => {
@@ -783,6 +811,14 @@
       polyline.setLatLngs([]);
 
       if (syncIntervalId) clearInterval(syncIntervalId);
+
+      // pills 선택 상태 업데이트
+      document.querySelectorAll('.quick-device-pill').forEach(btn => {
+        const isSel = btn.innerText.includes(deviceId);
+        btn.style.background = isSel ? 'rgba(59, 130, 246, 0.25)' : 'var(--bg-card)';
+        btn.style.borderColor = isSel ? 'var(--primary)' : 'var(--border)';
+        btn.style.color = isSel ? '#60a5fa' : '#94a3b8';
+      });
 
       document.getElementById('device-state-tag').innerHTML = 
         `<div>추적 대상: <strong style="color: #60a5fa">${deviceId}</strong></div>` +
