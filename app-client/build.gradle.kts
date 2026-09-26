@@ -13,8 +13,8 @@ android {
         applicationId = "com.antitheftguard.client"
         minSdk = 26
         targetSdk = 34
-        versionCode = 6
-        versionName = "1.2.5"
+        versionCode = 7
+        versionName = "1.2.6"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
             abiFilters += listOf("arm64-v8a")
@@ -73,4 +73,7 @@ dependencies {
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)
     kapt(libs.room.compiler)
+
+    testImplementation(libs.junit)
+    testImplementation(libs.coroutines.test)
 }

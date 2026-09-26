@@ -1031,7 +1031,7 @@
           const devLabel = deviceName ? ` <span style="color: #94a3b8; font-size: 0.8rem; font-weight: normal;">(${deviceName})</span>` : "";
 
           // 최근 GPS 포인트들 간격 계산
-          let intervalText = "이동 5초 / 정지 30초";
+          let intervalText = "이동 5초 / 정지 60초 (스마트 절전)";
           if (cachedAllPoints.length >= 2) {
             const sample = cachedAllPoints.slice(-10);
             const diffs = [];
@@ -1043,7 +1043,7 @@
             }
             if (diffs.length > 0) {
               const avg = Math.round(diffs.reduce((a, b) => a + b, 0) / diffs.length);
-              intervalText = `약 ${avg}초 (이동 5초 / 정지 30초)`;
+              intervalText = `약 ${avg}초 (이동 5초 / 정지 60초)`;
             }
           }
 
@@ -1054,7 +1054,7 @@
           const devLabel = deviceName ? ` <span style="color: #94a3b8; font-size: 0.8rem; font-weight: normal;">(${deviceName})</span>` : "";
           document.getElementById('device-state-tag').innerHTML = 
             `<div>추적 대상: <strong style="color: #60a5fa">${deviceId}</strong>${devLabel}</div>` +
-            `<div style="margin-top: 4px; font-size: 0.82rem; color: #94a3b8;">GPS 데이터 대기 중... <span style="color: #64748b; margin: 0 4px;">|</span> 데이터 간격: <strong style="color: #fbbf24">이동 5초 / 정지 30초</strong></div>`;
+            `<div style="margin-top: 4px; font-size: 0.82rem; color: #94a3b8;">GPS 데이터 대기 중... <span style="color: #64748b; margin: 0 4px;">|</span> 데이터 간격: <strong style="color: #fbbf24">이동 5초 / 정지 60초 (스마트 절전)</strong></div>`;
         }
 
         // 배터리 및 마지막 수신 시간 단일 업데이트

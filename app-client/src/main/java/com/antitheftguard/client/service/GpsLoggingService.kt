@@ -51,7 +51,7 @@ class GpsLoggingService : Service() {
     private val firestoreManager = FirestoreManager()
     private var isCharging = false
     private var currentSpeed = 0f
-    private var currentInterval: Long = 0L
+    private var currentConfig = SmartIntervalCalculator.getConfig(0f, false)
     private var deviceId: String = ""
 
     private val batteryReceiver = object : BroadcastReceiver() {
@@ -63,9 +63,9 @@ class GpsLoggingService : Service() {
                 else -> isCharging
             }
             if (wasCharging != isCharging) {
-                val newInterval = SmartIntervalCalculator.calculate(currentSpeed, isCharging)
-                if (newInterval != currentInterval) {
-                    currentInterval = newInterval
+                val newConfig = SmartIntervalCalculator.getConfig(currentSpeed, isCharging)
+                if (newConfig != currentConfig) {
+                    currentConfig = newConfig
                     updateLocationInterval()
                 }
             }
@@ -137,10 +137,11 @@ class GpsLoggingService : Service() {
                         AppDatabase.getInstance(this@GpsLoggingService).gpsPointDao().insert(entity)
                     }
                 }
-                // 속도 변화에 따른 인터벌 조정 (간격 값이 실제로 바뀔 때만 재등록)
-                val newInterval = SmartIntervalCalculator.calculate(currentSpeed, isCharging)
-                if (newInterval != currentInterval) {
-                    currentInterval = newInterval
+                // 속도 및 이동 상태 변화에 따른 인터벌/우선순위/거리 필터 조정
+                val newConfig = SmartIntervalCalculator.getConfig(currentSpeed, isCharging)
+                if (newConfig != currentConfig) {
+                    Log.d(TAG, "위치 수집 모드 전환: $currentConfig -> $newConfig")
+                    currentConfig = newConfig
                     updateLocationInterval()
                 }
             }
@@ -155,13 +156,15 @@ class GpsLoggingService : Service() {
             return
         }
         
-        currentInterval = SmartIntervalCalculator.calculate(currentSpeed, isCharging)
-        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, currentInterval)
-            .setMinUpdateIntervalMillis(currentInterval / 2)
-            .setMaxUpdateDelayMillis(currentInterval * 2)
+        currentConfig = SmartIntervalCalculator.getConfig(currentSpeed, isCharging)
+        val request = LocationRequest.Builder(currentConfig.priority, currentConfig.interval)
+            .setMinUpdateIntervalMillis(currentConfig.interval / 2)
+            .setMaxUpdateDelayMillis(currentConfig.interval * 2)
+            .setMinUpdateDistanceMeters(currentConfig.minUpdateDistanceMeters)
             .build()
         
         fusedLocationClient.requestLocationUpdates(request, locationCallback, Looper.getMainLooper())
+        Log.d(TAG, "위치 수집 등록: interval=${currentConfig.interval}ms, priority=${currentConfig.priority}, minDistance=${currentConfig.minUpdateDistanceMeters}m")
     }
 
     private fun updateLocationInterval() {
