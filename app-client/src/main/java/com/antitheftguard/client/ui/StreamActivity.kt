@@ -108,14 +108,54 @@ class StreamActivity : AppCompatActivity(), PeerConnectionListener {
 
                 val requestedCamera = snapshot.getString("camera")
                 if (!requestedCamera.isNullOrEmpty() && requestedCamera != currentCameraType) {
-                    Log.d(TAG, "실시간 카메라 변경 요청 감지: $currentCameraType -> $requestedCamera")
-                    currentCameraType = requestedCamera
-                    val preferFront = requestedCamera == "front"
-                    peerConnectionManager.switchCamera(preferFront) { success ->
-                        Log.d(TAG, "카메라 실시간 전환 결과: $success")
+                    Log.d(TAG, "실시간 카메라 변경 요청 감지: 현재 $currentCameraType -> 요청 $requestedCamera")
+                    val targetIsFront = requestedCamera == "front"
+                    peerConnectionManager.switchCamera { success, isFront ->
+                        if (success) {
+                            if (isFront != targetIsFront) {
+                                // 다중 렌즈 기기에서 원하는 방향이 아닐 경우(예: 망원/초광각 렌즈 순환) 한 번 더 순환 전환
+                                peerConnectionManager.switchCamera { success2, isFront2 ->
+                                    handleSwitchResult(success2, isFront2)
+                                }
+                            } else {
+                                handleSwitchResult(true, isFront)
+                            }
+                        } else {
+                            handleSwitchResult(false, isFront)
+                        }
                     }
                 }
             }
+    }
+
+    private fun handleSwitchResult(success: Boolean, isFront: Boolean) {
+        if (success) {
+            currentCameraType = if (isFront) "front" else "back"
+            Log.d(TAG, "카메라 전환 성공 완료 -> 현재: $currentCameraType")
+            if (deviceId.isNotEmpty()) {
+                db.collection("devices").document(deviceId)
+                    .collection("commands").document("stream")
+                    .update(
+                        mapOf(
+                            "status" to "CAMERA_SWITCHED",
+                            "camera" to currentCameraType,
+                            "switchedAt" to System.currentTimeMillis()
+                        )
+                    )
+            }
+        } else {
+            Log.e(TAG, "카메라 전환 실패 -> 현재 카메라 유지: $currentCameraType")
+            if (deviceId.isNotEmpty()) {
+                db.collection("devices").document(deviceId)
+                    .collection("commands").document("stream")
+                    .update(
+                        mapOf(
+                            "status" to "CAMERA_SWITCH_FAILED",
+                            "camera" to currentCameraType
+                        )
+                    )
+            }
+        }
     }
 
     private fun startCountDown() {

@@ -1256,31 +1256,83 @@
       document.getElementById('btn-toggle-camera').style.display = 'none';
     }
 
-    // 실시간 카메라 옵션 전환 (스트리밍 중 즉각 전/후면 전환 반영)
-    document.getElementById('select-camera').addEventListener('change', async (e) => {
-      const newCam = e.target.value;
-      if (peerConnection && currentDeviceId) {
-        try {
-          await fetch(`${REST_BASE}/devices/${currentDeviceId}/commands/stream?updateMask.fieldPaths=camera`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              fields: {
-                camera: { stringValue: newCam }
+    // 실시간 카메라 옵션 전환 (스트리밍 중 즉각 전/후면 전환 반영, 상태 감지 및 비디오 멈춤 방지)
+    let isCameraSwitching = false;
+
+    async function requestCameraSwitch(targetCam) {
+      if (isCameraSwitching) return;
+      if (!peerConnection || !currentDeviceId) return;
+
+      isCameraSwitching = true;
+      const btnToggle = document.getElementById('btn-toggle-camera');
+      const selectCam = document.getElementById('select-camera');
+
+      btnToggle.disabled = true;
+      selectCam.disabled = true;
+      btnToggle.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 전환 중...`;
+
+      try {
+        await fetch(`${REST_BASE}/devices/${currentDeviceId}/commands/stream?updateMask.fieldPaths=camera`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fields: {
+              camera: { stringValue: targetCam }
+            }
+          })
+        });
+        console.log("카메라 전환 명령 전송 완료:", targetCam);
+
+        // 기기에서 CAMERA_SWITCHED 응답 확인 (최대 5초 폴링)
+        let checkCount = 0;
+        const checkInterval = setInterval(async () => {
+          checkCount++;
+          try {
+            const res = await fetch(`${REST_BASE}/devices/${currentDeviceId}/commands/stream`);
+            if (res.ok) {
+              const doc = await res.json();
+              const parsed = parseFirestoreDoc(doc);
+              if (parsed && (parsed.status === "CAMERA_SWITCHED" || checkCount >= 10)) {
+                clearInterval(checkInterval);
+                finishSwitch(parsed ? parsed.camera : targetCam);
               }
-            })
-          });
-          console.log("카메라 실시간 전환 명령 전송:", newCam);
-        } catch (err) {
-          console.warn("카메라 전환 실패:", err);
+            }
+          } catch (e) {
+            if (checkCount >= 10) {
+              clearInterval(checkInterval);
+              finishSwitch(targetCam);
+            }
+          }
+        }, 500);
+
+      } catch (err) {
+        console.warn("카메라 전환 요청 실패:", err);
+        finishSwitch(targetCam);
+      }
+
+      function finishSwitch(activeCam) {
+        isCameraSwitching = false;
+        btnToggle.disabled = false;
+        selectCam.disabled = false;
+        btnToggle.innerHTML = `<i class="fa-solid fa-camera-rotate"></i> 전/후면 전환`;
+        if (activeCam) {
+          selectCam.value = activeCam;
+        }
+        // 카메라 변경 후 브라우저 비디오 재생 강제 유지 (화면 멈춤 방지)
+        if (remoteVideo && remoteVideo.srcObject) {
+          remoteVideo.play().catch(e => console.warn("Video play resume:", e));
         }
       }
+    }
+
+    document.getElementById('select-camera').addEventListener('change', (e) => {
+      requestCameraSwitch(e.target.value);
     });
 
     document.getElementById('btn-toggle-camera').addEventListener('click', () => {
       const selectCam = document.getElementById('select-camera');
-      selectCam.value = selectCam.value === 'front' ? 'back' : 'front';
-      selectCam.dispatchEvent(new Event('change'));
+      const nextCam = selectCam.value === 'front' ? 'back' : 'front';
+      requestCameraSwitch(nextCam);
     });
 
     // --- 5. Stream Recording & Download ---

@@ -140,42 +140,39 @@ class PeerConnectionManager(
         return peerConnectionFactory?.createVideoTrack("video0", videoSource)
     }
 
-    fun switchCamera(preferFront: Boolean? = null, callback: ((Boolean) -> Unit)? = null) {
+    private val isSwitchingCamera = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    fun switchCamera(callback: ((Boolean, Boolean) -> Unit)? = null) {
         val capturer = activeCapturer as? CameraVideoCapturer ?: run {
             Log.e(TAG, "현재 활성화된 카메라 캡처러가 없습니다.")
-            callback?.invoke(false)
+            callback?.invoke(false, false)
             return
         }
 
-        val enumerator = Camera2Enumerator(context)
-        val targetName = if (preferFront != null) {
-            enumerator.deviceNames.firstOrNull { name ->
-                if (preferFront) enumerator.isFrontFacing(name) else enumerator.isBackFacing(name)
-            }
-        } else null
+        if (!isSwitchingCamera.compareAndSet(false, true)) {
+            Log.w(TAG, "카메라 전환이 이미 진행 중입니다. 요청 무시.")
+            callback?.invoke(false, false)
+            return
+        }
 
-        if (targetName != null) {
+        try {
             capturer.switchCamera(object : CameraVideoCapturer.CameraSwitchHandler {
                 override fun onCameraSwitchDone(isFrontCamera: Boolean) {
-                    Log.d(TAG, "지정 카메라 전환 성공: $targetName (전면: $isFrontCamera)")
-                    callback?.invoke(true)
+                    isSwitchingCamera.set(false)
+                    Log.d(TAG, "카메라 토글 전환 성공 (전면 카메라 여부: $isFrontCamera)")
+                    callback?.invoke(true, isFrontCamera)
                 }
+
                 override fun onCameraSwitchError(errorDescription: String?) {
-                    Log.e(TAG, "카메라 전환 실패: $errorDescription")
-                    callback?.invoke(false)
-                }
-            }, targetName)
-        } else {
-            capturer.switchCamera(object : CameraVideoCapturer.CameraSwitchHandler {
-                override fun onCameraSwitchDone(isFrontCamera: Boolean) {
-                    Log.d(TAG, "카메라 토글 전환 성공 (전면: $isFrontCamera)")
-                    callback?.invoke(true)
-                }
-                override fun onCameraSwitchError(errorDescription: String?) {
+                    isSwitchingCamera.set(false)
                     Log.e(TAG, "카메라 토글 실패: $errorDescription")
-                    callback?.invoke(false)
+                    callback?.invoke(false, false)
                 }
             })
+        } catch (e: Throwable) {
+            isSwitchingCamera.set(false)
+            Log.e(TAG, "switchCamera 호출 중 예외 발생", e)
+            callback?.invoke(false, false)
         }
     }
 
@@ -215,20 +212,41 @@ object CameraHelper {
         val enumerator = Camera2Enumerator(context)
         val deviceNames = enumerator.deviceNames
 
+        val eventsHandler = object : CameraVideoCapturer.CameraEventsHandler {
+            override fun onCameraError(errorDescription: String?) {
+                Log.e(TAG, "WebRTC Camera error: $errorDescription")
+            }
+            override fun onCameraDisconnected() {
+                Log.w(TAG, "WebRTC Camera disconnected")
+            }
+            override fun onCameraFreezed(errorDescription: String?) {
+                Log.w(TAG, "WebRTC Camera freezed: $errorDescription")
+            }
+            override fun onCameraOpening(cameraName: String?) {
+                Log.d(TAG, "WebRTC Camera opening: $cameraName")
+            }
+            override fun onFirstFrameAvailable() {
+                Log.d(TAG, "WebRTC First frame available")
+            }
+            override fun onCameraClosed() {
+                Log.d(TAG, "WebRTC Camera closed")
+            }
+        }
+
         // 1. 요청된 방향(전면 또는 후면) 우선 탐색
         for (name in deviceNames) {
             if (preferFront && enumerator.isFrontFacing(name)) {
                 Log.d(TAG, "전면 카메라 선택: $name")
-                return enumerator.createCapturer(name, null)
+                return enumerator.createCapturer(name, eventsHandler)
             } else if (!preferFront && enumerator.isBackFacing(name)) {
                 Log.d(TAG, "후면 카메라 선택: $name")
-                return enumerator.createCapturer(name, null)
+                return enumerator.createCapturer(name, eventsHandler)
             }
         }
 
         // 2. 일치하는 카메라가 없을 경우 사용 가능한 첫 번째 카메라로 폴백
         for (name in deviceNames) {
-            val capturer = enumerator.createCapturer(name, null)
+            val capturer = enumerator.createCapturer(name, eventsHandler)
             if (capturer != null) {
                 Log.d(TAG, "폴백 카메라 선택: $name")
                 return capturer
