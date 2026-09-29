@@ -20,6 +20,9 @@ import com.antitheftguard.client.util.AutoStartHelper
 import com.antitheftguard.core.firebase.FirestoreManager
 import com.antitheftguard.core.model.DeviceInfo
 import com.google.android.material.button.MaterialButton
+import androidx.work.*
+import com.antitheftguard.client.worker.DailyRollupWorker
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -59,6 +62,7 @@ class MainActivity : AppCompatActivity() {
         updateBatteryInfo()
         updatePermissionStatus()
         updateServiceStatusUi()
+        setupWorkers()
     }
 
     override fun onStart() {
@@ -364,5 +368,33 @@ class MainActivity : AppCompatActivity() {
         scope.launch(Dispatchers.IO) {
             firestoreManager.registerDevice(device)
         }
+    }
+
+    private fun setupWorkers() {
+        val constraints = Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .build()
+
+        // 12시간 주기 정기 워커 등록 (네트워크 연결 시 동작)
+        val periodicWork = PeriodicWorkRequestBuilder<DailyRollupWorker>(
+            12, TimeUnit.HOURS
+        ).setConstraints(constraints).build()
+
+        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+            "DailyRollupPeriodicWork",
+            ExistingPeriodicWorkPolicy.KEEP,
+            periodicWork
+        )
+
+        // 앱 실행 시 즉시 미완료된 최근 일별 데이터(어제 등) 갈무리 1회 수행
+        val oneTimeWork = OneTimeWorkRequestBuilder<DailyRollupWorker>()
+            .setConstraints(constraints)
+            .build()
+
+        WorkManager.getInstance(this).enqueueUniqueWork(
+            "ImmediateDailyRollupWork",
+            ExistingWorkPolicy.REPLACE,
+            oneTimeWork
+        )
     }
 }

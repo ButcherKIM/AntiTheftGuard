@@ -16,10 +16,21 @@ data class GpsPoint(
 /** 위치 기록 배치 모델 */
 @Serializable
 data class GpsBatch(
-    val deviceId: String,
-    val startTime: Long,
-    val endTime: Long,
-    val points: List<GpsPoint>
+    val deviceId: String = "",
+    val startTime: Long = 0L,
+    val endTime: Long = 0L,
+    val points: List<GpsPoint> = emptyList()
+)
+
+/** 일별 위치 기록 통합 롤업 모델 (장기 보관 및 읽기 횟수 99.9% 최적화용) */
+@Serializable
+data class DailyHistory(
+    val deviceId: String = "",
+    val date: String = "", // "YYYY-MM-DD"
+    val startTime: Long = 0L,
+    val endTime: Long = 0L,
+    val pointCount: Int = 0,
+    val points: List<GpsPoint> = emptyList()
 )
 
 /** 기기 정보 모델 */

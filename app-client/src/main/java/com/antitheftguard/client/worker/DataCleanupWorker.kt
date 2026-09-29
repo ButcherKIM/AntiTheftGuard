@@ -15,11 +15,11 @@ class DataCleanupWorker(
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         try {
-            val threeDaysAgo = System.currentTimeMillis() - (3 * 24 * 60 * 60 * 1000L)
+            val thirtyDaysAgo = System.currentTimeMillis() - (30L * 24 * 60 * 60 * 1000L)
             
             // Room DB 삭제
             val db = AppDatabase.getInstance(applicationContext)
-            db.gpsPointDao().deleteOlderThan(threeDaysAgo)
+            db.gpsPointDao().deleteOlderThan(thirtyDaysAgo)
             
             // TODO: FirestoreManager를 통한 삭제 호출
             Result.success()

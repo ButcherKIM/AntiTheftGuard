@@ -498,6 +498,19 @@
         </div>
       </div>
 
+      <!-- Daily History Viewer (일별 통합 히스토리 조회) -->
+      <div class="sidebar-section">
+        <div class="section-title"><i class="fa-solid fa-calendar-days"></i> 과거 이동 경로 조회 (일별 롤업)</div>
+        <div style="display: flex; gap: 8px; align-items: center; margin-top: 4px;">
+          <input type="date" id="input-history-date" style="flex: 1; padding: 9px 12px; background: var(--bg-dark); color: var(--text-main); border: 1px solid var(--border); border-radius: 8px; font-size: 0.88rem; outline: none; color-scheme: dark;" />
+          <button class="map-btn" id="btn-load-daily-history" style="white-space: nowrap;"><i class="fa-solid fa-magnifying-glass"></i> 조회</button>
+          <button class="map-btn" id="btn-return-live" style="display: none; background: rgba(16, 185, 129, 0.2); border-color: #10b981; color: #34d399; white-space: nowrap;"><i class="fa-solid fa-satellite-dish"></i> 오늘 실시간</button>
+        </div>
+        <div id="history-status-msg" style="margin-top: 6px; font-size: 0.82rem; color: var(--text-muted); line-height: 1.4;">
+          조회할 날짜를 선택하면 1개 통합 문서(1회 읽기)로 하루치 전체 경로를 표시합니다.
+        </div>
+      </div>
+
       <!-- Telemetry Info -->
       <div class="sidebar-section">
         <div class="section-title"><i class="fa-solid fa-gauge-high"></i> 실시간 상태 정보</div>
@@ -842,6 +855,9 @@
         polyline.setLatLngs([]);
         isInitialHistoryLoaded = false;
         lastKnownSeen = 0;
+        if (isDailyHistoryMode) {
+          returnToLiveMode();
+        }
       }
 
       if (syncIntervalId) clearInterval(syncIntervalId);
@@ -866,6 +882,119 @@
         syncDeviceData(deviceId);
       }, 8000);
     }
+
+    // --- 일별 롤업(Daily Rollup) 히스토리 조회 로직 ---
+    let isDailyHistoryMode = false;
+    let dailyHistoryPoints = [];
+
+    // 기본 날짜를 '어제'로 자동 세팅
+    const defaultHistDate = new Date();
+    defaultHistDate.setDate(defaultHistDate.getDate() - 1);
+    const histYyyy = defaultHistDate.getFullYear();
+    const histMm = String(defaultHistDate.getMonth() + 1).padStart(2, '0');
+    const histDd = String(defaultHistDate.getDate()).padStart(2, '0');
+    const histDateInput = document.getElementById('input-history-date');
+    if (histDateInput) {
+      histDateInput.value = `${histYyyy}-${histMm}-${histDd}`;
+    }
+
+    async function loadDailyHistory(deviceId, dateStr) {
+      if (!deviceId) {
+        alert("기기 ID를 먼저 입력하거나 선택해 주세요.");
+        return;
+      }
+      if (!dateStr) {
+        alert("조회할 날짜를 선택해 주세요.");
+        return;
+      }
+
+      const statusEl = document.getElementById('history-status-msg');
+      statusEl.innerHTML = `<span style="color: #60a5fa"><i class="fa-solid fa-spinner fa-spin"></i> [${dateStr}] 일별 통합 데이터 불러오는 중... (읽기 1회)</span>`;
+
+      try {
+        const res = await fetch(getFirestoreUrl(`devices/${deviceId}/daily_history/${dateStr}`));
+        if (res.status === 429) {
+          handle429Error();
+          return;
+        }
+        if (res.status === 404) {
+          statusEl.innerHTML = `<span style="color: #f87171"><i class="fa-solid fa-circle-exclamation"></i> ${dateStr} 일별 통합 기록이 없습니다.<br><small style="color: #94a3b8;">(기기가 꺼져 있었거나 아직 자정 업로드 전일 수 있습니다.)</small></span>`;
+          return;
+        }
+        if (!res.ok) {
+          statusEl.innerHTML = `<span style="color: #f87171">조회 실패 (${res.status})</span>`;
+          return;
+        }
+
+        const docData = await res.json();
+        const daily = parseFirestoreDoc(docData);
+        if (!daily || !Array.isArray(daily.points) || daily.points.length === 0) {
+          statusEl.innerHTML = `<span style="color: #f87171">${dateStr} 날짜에 저장된 위치 좌표가 없습니다.</span>`;
+          return;
+        }
+
+        isDailyHistoryMode = true;
+        document.getElementById('btn-return-live').style.display = 'inline-flex';
+        dailyHistoryPoints = daily.points.slice().sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+
+        // 지도 궤적 갱신
+        const coords = dailyHistoryPoints.map(p => [p.latitude, p.longitude]);
+        polyline.setLatLngs(coords);
+
+        const firstPt = dailyHistoryPoints[0];
+        const lastPt = dailyHistoryPoints[dailyHistoryPoints.length - 1];
+        updateMapLocation(lastPt.latitude, lastPt.longitude, lastPt.accuracy);
+
+        if (coords.length > 1) {
+          map.fitBounds(L.latLngBounds(coords), { padding: [40, 40] });
+        }
+
+        // 텔레메트리 업데이트
+        document.getElementById('val-speed').innerText = `총 ${dailyHistoryPoints.length}개`;
+        document.getElementById('val-accuracy').innerText = `일별 롤업 (1회 읽기)`;
+        const sTime = new Date(firstPt.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const eTime = new Date(lastPt.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        document.getElementById('val-last-seen').innerHTML = `<div style="font-size: 0.95rem; font-weight: 700;">${dateStr}</div><div style="font-size: 0.8rem; color: #94a3b8;">${sTime} ~ ${eTime}</div>`;
+        if (lastPt.batteryLevel !== undefined) {
+          document.getElementById('val-battery').innerText = `${lastPt.batteryLevel}%`;
+          document.getElementById('val-battery-bar').style.width = `${lastPt.batteryLevel}%`;
+        }
+
+        statusEl.innerHTML = `<span style="color: #34d399"><i class="fa-solid fa-check"></i> ${dateStr} 경로 로드 완료! (총 ${dailyHistoryPoints.length}개 좌표, 단 1회 읽기 사용)</span>`;
+      } catch (err) {
+        console.error("loadDailyHistory error:", err);
+        statusEl.innerHTML = `<span style="color: #f87171">조회 오류: ${err.message}</span>`;
+      }
+    }
+
+    function returnToLiveMode() {
+      isDailyHistoryMode = false;
+      document.getElementById('btn-return-live').style.display = 'none';
+      document.getElementById('history-status-msg').innerHTML = "조회할 날짜를 선택하면 1개 통합 문서(1회 읽기)로 하루치 전체 경로를 표시합니다.";
+
+      if (cachedAllPoints.length > 0) {
+        pathCoordinates = cachedAllPoints.map(pt => [pt.latitude, pt.longitude]);
+        polyline.setLatLngs(pathCoordinates);
+        const latest = cachedAllPoints[cachedAllPoints.length - 1];
+        updateMapLocation(latest.latitude, latest.longitude, latest.accuracy);
+        if (pathCoordinates.length > 1) {
+          map.fitBounds(L.latLngBounds(pathCoordinates), { padding: [40, 40] });
+        }
+      }
+      if (currentDeviceId) {
+        syncDeviceData(currentDeviceId);
+      }
+    }
+
+    document.getElementById('btn-load-daily-history').addEventListener('click', () => {
+      const devId = currentDeviceId || document.getElementById('target-device-id').value.trim();
+      const dateStr = document.getElementById('input-history-date').value;
+      loadDailyHistory(devId, dateStr);
+    });
+
+    document.getElementById('btn-return-live').addEventListener('click', () => {
+      returnToLiveMode();
+    });
 
     // 실시간 수신 시간 포맷팅 함수 (두 줄 표시: 1줄 시간, 2줄 경과시간)
     let lastRecordedTimestamp = 0;
@@ -894,6 +1023,7 @@
 
     async function syncDeviceData(deviceId) {
       if (isSyncing) return;
+      if (isDailyHistoryMode) return; // 과거 일별 히스토리 조회 중에는 실시간 폴링이 지도를 덮어쓰지 않음
       isSyncing = true;
 
       try {

@@ -19,6 +19,21 @@ class FirestoreManager {
           .set(batch).await()
     }
     
+    /** 일별 위치 통합 롤업 문서 저장 (일일 1회 쓰기, 1개 문서로 저장) */
+    suspend fun saveDailyHistory(daily: DailyHistory): Result<Unit> = runCatching {
+        db.collection("devices").document(daily.deviceId)
+          .collection("daily_history").document(daily.date)
+          .set(daily).await()
+    }
+
+    /** 일별 위치 통합 롤업 문서 1개 조회 (읽기 1회로 하루 전체 조회) */
+    suspend fun getDailyHistory(deviceId: String, date: String): Result<DailyHistory?> = runCatching {
+        val snapshot = db.collection("devices").document(deviceId)
+          .collection("daily_history").document(date)
+          .get().await()
+        snapshot.toObject(DailyHistory::class.java)
+    }
+    
     suspend fun getLocationHistory(deviceId: String, fromTime: Long, toTime: Long): Result<List<GpsBatch>> = runCatching {
         val snapshot = db.collection("devices").document(deviceId)
             .collection("gps_batches")

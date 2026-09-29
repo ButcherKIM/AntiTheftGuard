@@ -23,6 +23,9 @@ interface GpsPointDao {
     @Query("UPDATE gps_points SET synced = 1 WHERE id IN (:ids)")
     suspend fun markAsSynced(ids: List<Long>)
 
+    @Query("SELECT * FROM gps_points WHERE timestamp >= :startTime AND timestamp < :endTime ORDER BY timestamp ASC")
+    suspend fun getPointsBetween(startTime: Long, endTime: Long): List<GpsPointEntity>
+
     @Query("DELETE FROM gps_points WHERE timestamp < :olderThan")
     suspend fun deleteOlderThan(olderThan: Long)
 }
