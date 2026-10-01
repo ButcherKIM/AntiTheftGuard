@@ -82,6 +82,8 @@ class MainActivity : AppCompatActivity() {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
                 ContextCompat.startForegroundService(this, Intent(this, GpsLoggingService::class.java))
             }
+        } else if (GpsLoggingService.isRunning) {
+            com.antitheftguard.client.motion.ActivityTransitionManager.startTracking(this)
         }
         updateServiceStatusUi()
     }
@@ -269,6 +271,10 @@ class MainActivity : AppCompatActivity() {
             Manifest.permission.RECORD_AUDIO
         )
 
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            permissions.add(Manifest.permission.ACTIVITY_RECOGNITION)
+        }
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             permissions.add(Manifest.permission.POST_NOTIFICATIONS)
         }
@@ -318,6 +324,9 @@ class MainActivity : AppCompatActivity() {
         val fineLocation = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         val camera = ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
         val mic = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        val activityRecognition = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            ContextCompat.checkSelfPermission(this, Manifest.permission.ACTIVITY_RECOGNITION) == PackageManager.PERMISSION_GRANTED
+        } else true
         val notif = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
         } else true
@@ -325,12 +334,13 @@ class MainActivity : AppCompatActivity() {
             Settings.canDrawOverlays(this)
         } else true
 
-        if (fineLocation && camera && mic && notif && overlay) {
+        if (fineLocation && camera && mic && notif && overlay && activityRecognition) {
             binding.tvPermissionsStatus.text = "모든 필수 권한: 완벽하게 허용됨 ✅"
             binding.tvPermissionsStatus.setTextColor(0xFF34D399.toInt())
         } else {
             val missing = mutableListOf<String>()
             if (!fineLocation) missing.add("위치")
+            if (!activityRecognition) missing.add("신체 활동 감지")
             if (!camera) missing.add("카메라")
             if (!mic) missing.add("마이크")
             if (!notif) missing.add("알림")

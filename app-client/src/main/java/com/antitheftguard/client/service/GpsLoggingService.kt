@@ -33,15 +33,29 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.collectLatest
+import com.antitheftguard.client.motion.ActivityTransitionManager
 
 class GpsLoggingService : Service() {
     companion object {
         private const val TAG = "GpsLoggingService"
         private const val NOTIFICATION_ID = 1
         private const val CHANNEL_ID = "gps_tracking"
+        const val ACTION_MOTION_STATE_CHANGED = "com.antitheftguard.client.ACTION_MOTION_STATE_CHANGED"
+        const val EXTRA_IS_MOVING = "extra_is_moving"
+
         @Volatile
         var isRunning: Boolean = false
             private set
+
+        fun onMotionStateChanged(context: Context, isMoving: Boolean) {
+            val intent = Intent(context, GpsLoggingService::class.java).apply {
+                action = ACTION_MOTION_STATE_CHANGED
+                putExtra(EXTRA_IS_MOVING, isMoving)
+            }
+            if (isRunning) {
+                context.startService(intent)
+            }
+        }
     }
 
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -50,8 +64,9 @@ class GpsLoggingService : Service() {
     private lateinit var gpsBatcher: GpsBatcher
     private val firestoreManager = FirestoreManager()
     private var isCharging = false
+    private var isMotionActive = true
     private var currentSpeed = 0f
-    private var currentConfig = SmartIntervalCalculator.getConfig(0f, false)
+    private var currentConfig = SmartIntervalCalculator.getConfig(0f, false, true)
     private var deviceId: String = ""
 
     private val batteryReceiver = object : BroadcastReceiver() {
@@ -63,7 +78,7 @@ class GpsLoggingService : Service() {
                 else -> isCharging
             }
             if (wasCharging != isCharging) {
-                val newConfig = SmartIntervalCalculator.getConfig(currentSpeed, isCharging)
+                val newConfig = SmartIntervalCalculator.getConfig(currentSpeed, isCharging, isMotionActive)
                 if (newConfig != currentConfig) {
                     currentConfig = newConfig
                     updateLocationInterval()
@@ -106,6 +121,7 @@ class GpsLoggingService : Service() {
         collectBatches()
         registerBatteryReceiver()
         listenForRemoteCommands()
+        ActivityTransitionManager.startTracking(this)
     }
 
     private fun setupLocationCallback() {
@@ -138,7 +154,7 @@ class GpsLoggingService : Service() {
                     }
                 }
                 // 속도 및 이동 상태 변화에 따른 인터벌/우선순위/거리 필터 조정
-                val newConfig = SmartIntervalCalculator.getConfig(currentSpeed, isCharging)
+                val newConfig = SmartIntervalCalculator.getConfig(currentSpeed, isCharging, isMotionActive)
                 if (newConfig != currentConfig) {
                     Log.d(TAG, "위치 수집 모드 전환: $currentConfig -> $newConfig")
                     currentConfig = newConfig
@@ -156,7 +172,7 @@ class GpsLoggingService : Service() {
             return
         }
         
-        currentConfig = SmartIntervalCalculator.getConfig(currentSpeed, isCharging)
+        currentConfig = SmartIntervalCalculator.getConfig(currentSpeed, isCharging, isMotionActive)
         val request = LocationRequest.Builder(currentConfig.priority, currentConfig.interval)
             .setMinUpdateIntervalMillis(currentConfig.interval / 2)
             .setMaxUpdateDelayMillis(currentConfig.interval * 2)
@@ -336,6 +352,20 @@ class GpsLoggingService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_MOTION_STATE_CHANGED) {
+            val moving = intent.getBooleanExtra(EXTRA_IS_MOVING, true)
+            if (isMotionActive != moving) {
+                Log.d(TAG, "하드웨어 모션 상태 변경: isMotionActive=$isMotionActive -> $moving")
+                isMotionActive = moving
+                val newConfig = SmartIntervalCalculator.getConfig(currentSpeed, isCharging, isMotionActive)
+                if (newConfig != currentConfig) {
+                    Log.d(TAG, "모션 전환에 따른 위치 수집 모드 변경: $currentConfig -> $newConfig")
+                    currentConfig = newConfig
+                    updateLocationInterval()
+                }
+            }
+        }
+
         val currentId = getSharedPreferences("antitheft", MODE_PRIVATE)
             .getString("device_id", "") ?: ""
         if (currentId.isNotEmpty() && currentId != deviceId) {
@@ -352,6 +382,7 @@ class GpsLoggingService : Service() {
     override fun onDestroy() {
         isRunning = false
         super.onDestroy()
+        ActivityTransitionManager.stopTracking(this)
         commandListener?.remove()
         fusedLocationClient.removeLocationUpdates(locationCallback)
         unregisterReceiver(batteryReceiver)
