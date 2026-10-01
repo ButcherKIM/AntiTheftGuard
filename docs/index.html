@@ -768,6 +768,7 @@
     });
 
     document.getElementById('btn-clear-trail').addEventListener('click', () => {
+      if (typeof clearHistoryVisuals === 'function') clearHistoryVisuals();
       pathCoordinates = [];
       polyline.setLatLngs([]);
     });
@@ -913,6 +914,19 @@
     // --- 일별 롤업(Daily Rollup) 히스토리 조회 로직 ---
     let isDailyHistoryMode = false;
     let dailyHistoryPoints = [];
+    let gapPolylines = [];
+    let historyMarkers = [];
+
+    function clearHistoryVisuals() {
+      if (gapPolylines.length > 0) {
+        gapPolylines.forEach(l => map.removeLayer(l));
+        gapPolylines = [];
+      }
+      if (historyMarkers.length > 0) {
+        historyMarkers.forEach(m => map.removeLayer(m));
+        historyMarkers = [];
+      }
+    }
 
     // 기본 날짜를 '어제'로 자동 세팅
     const defaultHistDate = new Date();
@@ -961,33 +975,98 @@
         }
 
         isDailyHistoryMode = true;
+        if (syncIntervalId) {
+          clearInterval(syncIntervalId);
+          syncIntervalId = null;
+        }
+
         document.getElementById('btn-return-live').style.display = 'inline-flex';
         dailyHistoryPoints = daily.points.slice().sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
 
-        // 지도 궤적 갱신 (15분 이상 공백 시 직선 잇기 방지)
-        const coords = buildTrackSegments(dailyHistoryPoints);
-        polyline.setLatLngs(coords);
+        clearHistoryVisuals();
+
+        // 세그먼트 분리 및 15분 이상 단절 구간(Gap) 점선 표시
+        const segments = [];
+        let currentSeg = [];
+        for (let i = 0; i < dailyHistoryPoints.length; i++) {
+          const pt = dailyHistoryPoints[i];
+          if (currentSeg.length > 0) {
+            const prev = dailyHistoryPoints[i - 1];
+            const timeDiffMs = (pt.timestamp || 0) - (prev.timestamp || 0);
+            if (timeDiffMs > 15 * 60 * 1000) {
+              if (currentSeg.length > 0) segments.push(currentSeg);
+              currentSeg = [];
+
+              // 신호 단절 구간을 회색 점선으로 표현 (장기 공백 시각화)
+              const gapMins = Math.round(timeDiffMs / (60 * 1000));
+              const prevTime = new Date(prev.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+              const nextTime = new Date(pt.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+              const gapLine = L.polyline([[prev.latitude, prev.longitude], [pt.latitude, pt.longitude]], {
+                color: '#94a3b8',
+                weight: 2,
+                dashArray: '6, 8',
+                opacity: 0.65
+              }).addTo(map).bindPopup(
+                `<b>⚠️ 신호 단절 구간</b><br>` +
+                `단절 시간: 약 ${gapMins}분<br>` +
+                `${prevTime} ~ ${nextTime}`
+              );
+              gapPolylines.push(gapLine);
+            }
+          }
+          currentSeg.push([pt.latitude, pt.longitude]);
+        }
+        if (currentSeg.length > 0) segments.push(currentSeg);
+
+        polyline.setLatLngs(segments);
 
         const firstPt = dailyHistoryPoints[0];
         const lastPt = dailyHistoryPoints[dailyHistoryPoints.length - 1];
         updateMapLocation(lastPt.latitude, lastPt.longitude, lastPt.accuracy);
 
+        // 출발지(초록) 및 도착지(빨강) 마커 추가
+        const sTime = new Date(firstPt.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const eTime = new Date(lastPt.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+        const startMarker = L.circleMarker([firstPt.latitude, firstPt.longitude], {
+          radius: 8,
+          color: '#ffffff',
+          weight: 2,
+          fillColor: '#10b981',
+          fillOpacity: 0.95
+        }).addTo(map).bindPopup(`<b>🟢 출발 지점 (${dateStr})</b><br>${sTime}<br>위도: ${firstPt.latitude.toFixed(4)}, 경도: ${firstPt.longitude.toFixed(4)}`);
+        historyMarkers.push(startMarker);
+
+        const endMarker = L.circleMarker([lastPt.latitude, lastPt.longitude], {
+          radius: 8,
+          color: '#ffffff',
+          weight: 2,
+          fillColor: '#ef4444',
+          fillOpacity: 0.95
+        }).addTo(map).bindPopup(`<b>🔴 최종 지점 (${dateStr})</b><br>${eTime}<br>위도: ${lastPt.latitude.toFixed(4)}, 경도: ${lastPt.longitude.toFixed(4)}`);
+        historyMarkers.push(endMarker);
+
         if (dailyHistoryPoints.length > 1) {
           map.fitBounds(L.latLngBounds(dailyHistoryPoints.map(p => [p.latitude, p.longitude])), { padding: [40, 40] });
         }
 
-        // 텔레메트리 업데이트
-        document.getElementById('val-speed').innerText = `총 ${dailyHistoryPoints.length}개`;
+        // 텔레메트리 및 상/하단 바 갱신
+        setOnlineStatus(true, `📅 ${dateStr} 일별 롤업`);
+        document.getElementById('device-state-tag').innerHTML = 
+          `<div>추적 대상: <strong style="color: #60a5fa">${deviceId}</strong></div>` +
+          `<div style="margin-top: 4px; font-size: 0.82rem; color: #cbd5e1;">` +
+          `일별 롤업 궤적: <strong style="color: #34d399">총 ${dailyHistoryPoints.length.toLocaleString()}개</strong> 📍 ` +
+          `<span style="color: #64748b; margin: 0 4px;">|</span> 조회 일자: <strong style="color: #fbbf24">${dateStr}</strong> (${sTime} ~ ${eTime})</div>`;
+
+        document.getElementById('val-speed').innerText = `총 ${dailyHistoryPoints.length.toLocaleString()}개`;
         document.getElementById('val-accuracy').innerText = `일별 롤업 (1회 읽기)`;
-        const sTime = new Date(firstPt.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        const eTime = new Date(lastPt.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         document.getElementById('val-last-seen').innerHTML = `<div style="font-size: 0.95rem; font-weight: 700;">${dateStr}</div><div style="font-size: 0.8rem; color: #94a3b8;">${sTime} ~ ${eTime}</div>`;
         if (lastPt.batteryLevel !== undefined) {
           document.getElementById('val-battery').innerText = `${lastPt.batteryLevel}%`;
           document.getElementById('val-battery-bar').style.width = `${lastPt.batteryLevel}%`;
         }
 
-        statusEl.innerHTML = `<span style="color: #34d399"><i class="fa-solid fa-check"></i> ${dateStr} 경로 로드 완료! (총 ${dailyHistoryPoints.length}개 좌표, 단 1회 읽기 사용)</span>`;
+        statusEl.innerHTML = `<span style="color: #34d399"><i class="fa-solid fa-check"></i> ${dateStr} 경로 로드 완료! (총 ${dailyHistoryPoints.length.toLocaleString()}개 좌표, 단 1회 읽기 사용)</span>`;
       } catch (err) {
         console.error("loadDailyHistory error:", err);
         statusEl.innerHTML = `<span style="color: #f87171">조회 오류: ${err.message}</span>`;
@@ -996,6 +1075,7 @@
 
     function returnToLiveMode() {
       isDailyHistoryMode = false;
+      clearHistoryVisuals();
       document.getElementById('btn-return-live').style.display = 'none';
       document.getElementById('history-status-msg').innerHTML = "조회할 날짜를 선택하면 1개 통합 문서(1회 읽기)로 하루치 전체 경로를 표시합니다.";
 
@@ -1010,6 +1090,12 @@
       }
       if (currentDeviceId) {
         syncDeviceData(currentDeviceId);
+        if (!syncIntervalId) {
+          syncIntervalId = setInterval(() => {
+            if (document.hidden) return;
+            syncDeviceData(currentDeviceId);
+          }, 8000);
+        }
       }
     }
 
@@ -1182,6 +1268,7 @@
         }
 
         // 3) UI 일괄 업데이트 (값 덮어쓰기 깜빡임 방지)
+        if (isDailyHistoryMode) return; // 과거 일별 히스토리 모드일 때는 실시간 폴링 결과로 UI를 덮어쓰지 않음
         if (cachedAllPoints.length > 0) {
           // 시간순 정렬 (과거 -> 최신)
           cachedAllPoints.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
