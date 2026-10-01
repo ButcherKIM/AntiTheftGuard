@@ -736,6 +736,28 @@
       }
     }
 
+    // 15분 이상 수신 공백 시 직선 잇기 방지 (세그먼트 분리)
+    function buildTrackSegments(points) {
+      if (!points || points.length === 0) return [];
+      const segments = [];
+      let currentSegment = [];
+
+      for (let i = 0; i < points.length; i++) {
+        const pt = points[i];
+        if (currentSegment.length > 0) {
+          const prev = points[i - 1];
+          const timeDiffMs = (pt.timestamp || 0) - (prev.timestamp || 0);
+          if (timeDiffMs > 15 * 60 * 1000) {
+            if (currentSegment.length > 0) segments.push(currentSegment);
+            currentSegment = [];
+          }
+        }
+        currentSegment.push([pt.latitude, pt.longitude]);
+      }
+      if (currentSegment.length > 0) segments.push(currentSegment);
+      return segments;
+    }
+
     document.getElementById('btn-recenter').addEventListener('click', () => {
       fixMapSize();
       if (phoneMarker) {
@@ -752,6 +774,11 @@
 
     document.getElementById('btn-refresh').addEventListener('click', () => {
       if (currentDeviceId) {
+        isInitialHistoryLoaded = false;
+        lastKnownSeen = 0;
+        cachedAllPoints = [];
+        pathCoordinates = [];
+        polyline.setLatLngs([]);
         syncDeviceData(currentDeviceId);
       } else {
         loadAvailableDevices();
@@ -937,16 +964,16 @@
         document.getElementById('btn-return-live').style.display = 'inline-flex';
         dailyHistoryPoints = daily.points.slice().sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
 
-        // 지도 궤적 갱신
-        const coords = dailyHistoryPoints.map(p => [p.latitude, p.longitude]);
+        // 지도 궤적 갱신 (15분 이상 공백 시 직선 잇기 방지)
+        const coords = buildTrackSegments(dailyHistoryPoints);
         polyline.setLatLngs(coords);
 
         const firstPt = dailyHistoryPoints[0];
         const lastPt = dailyHistoryPoints[dailyHistoryPoints.length - 1];
         updateMapLocation(lastPt.latitude, lastPt.longitude, lastPt.accuracy);
 
-        if (coords.length > 1) {
-          map.fitBounds(L.latLngBounds(coords), { padding: [40, 40] });
+        if (dailyHistoryPoints.length > 1) {
+          map.fitBounds(L.latLngBounds(dailyHistoryPoints.map(p => [p.latitude, p.longitude])), { padding: [40, 40] });
         }
 
         // 텔레메트리 업데이트
@@ -973,12 +1000,12 @@
       document.getElementById('history-status-msg').innerHTML = "조회할 날짜를 선택하면 1개 통합 문서(1회 읽기)로 하루치 전체 경로를 표시합니다.";
 
       if (cachedAllPoints.length > 0) {
-        pathCoordinates = cachedAllPoints.map(pt => [pt.latitude, pt.longitude]);
+        pathCoordinates = buildTrackSegments(cachedAllPoints);
         polyline.setLatLngs(pathCoordinates);
         const latest = cachedAllPoints[cachedAllPoints.length - 1];
         updateMapLocation(latest.latitude, latest.longitude, latest.accuracy);
-        if (pathCoordinates.length > 1) {
-          map.fitBounds(L.latLngBounds(pathCoordinates), { padding: [40, 40] });
+        if (cachedAllPoints.length > 1) {
+          map.fitBounds(L.latLngBounds(cachedAllPoints.map(p => [p.latitude, p.longitude])), { padding: [40, 40] });
         }
       }
       if (currentDeviceId) {
@@ -1052,8 +1079,8 @@
         }
 
         // 2) GPS 궤적 및 최근 위치 수신 (스마트 델타 동기화)
-        // 최초 1회: 최근 25개 배치 조회하여 맵에 과거 궤적 복원
-        // 이후 주기적 폴링: 기기 lastSeen이 변경되었을 때만 최신 1개 배치만 가져옴! (읽기 비용 99% 절약)
+        // 최초 1회: 최근 50개 배치 조회하여 맵에 과거 궤적 복원
+        // 이후 주기적 폴링: lastKnownSeen 이후에 생성된 새로운 배치들을 누락 없이 모두 수신
         if (!isInitialHistoryLoaded) {
           try {
             const queryRes = await fetch(getFirestoreUrl(`devices/${deviceId}:runQuery`), {
@@ -1063,7 +1090,7 @@
                 structuredQuery: {
                   from: [{ collectionId: 'gps_batches' }],
                   orderBy: [{ field: { fieldPath: 'startTime' }, direction: 'DESCENDING' }],
-                  limit: 25
+                  limit: 50
                 }
               })
             });
@@ -1089,15 +1116,19 @@
                   });
                 }
               });
+
+              // 시간순 정렬 (과거 -> 최신)
+              cachedAllPoints.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
             }
           } catch (queryErr) {
             console.warn("Initial runQuery failed:", queryErr);
           }
 
           isInitialHistoryLoaded = true;
-          lastKnownSeen = deviceLastSeen || (cachedAllPoints.length > 0 ? cachedAllPoints[cachedAllPoints.length - 1].timestamp : 0);
+          const maxPointTime = cachedAllPoints.length > 0 ? cachedAllPoints[cachedAllPoints.length - 1].timestamp : 0;
+          lastKnownSeen = Math.max(deviceLastSeen || 0, maxPointTime);
         } else if (deviceLastSeen && deviceLastSeen > lastKnownSeen) {
-          // 스마트 델타: 새 데이터가 기록된 경우에만 최신 1개 배치만 조회!
+          // 스마트 델타: 브라우저 탭 비활성화 등으로 밀린 배치들(최대 50개)을 누락 없이 순서대로 수신
           try {
             const queryRes = await fetch(getFirestoreUrl(`devices/${deviceId}:runQuery`), {
               method: 'POST',
@@ -1105,8 +1136,15 @@
               body: JSON.stringify({
                 structuredQuery: {
                   from: [{ collectionId: 'gps_batches' }],
-                  orderBy: [{ field: { fieldPath: 'startTime' }, direction: 'DESCENDING' }],
-                  limit: 1
+                  where: {
+                    fieldFilter: {
+                      field: { fieldPath: 'startTime' },
+                      op: 'GREATER_THAN',
+                      value: { integerValue: String(lastKnownSeen) }
+                    }
+                  },
+                  orderBy: [{ field: { fieldPath: 'startTime' }, direction: 'ASCENDING' }],
+                  limit: 50
                 }
               })
             });
@@ -1118,23 +1156,29 @@
 
             if (queryRes.ok) {
               const queryData = await queryRes.json();
-              const latestBatchItem = queryData.find(item => item.document);
-              if (latestBatchItem) {
-                const batch = parseFirestoreDoc(latestBatchItem.document);
-                if (batch && Array.isArray(batch.points)) {
-                  const existingTimestamps = new Set(cachedAllPoints.map(p => p.timestamp));
-                  batch.points.forEach(pt => {
-                    if (pt && typeof pt.latitude === 'number' && typeof pt.longitude === 'number' && !existingTimestamps.has(pt.timestamp)) {
-                      cachedAllPoints.push(pt);
+              const newBatchDocs = queryData.filter(item => item.document);
+              if (newBatchDocs.length > 0) {
+                const existingTimestamps = new Set(cachedAllPoints.map(p => p.timestamp));
+                newBatchDocs.forEach(item => {
+                  const batch = parseFirestoreDoc(item.document);
+                  if (batch && Array.isArray(batch.points)) {
+                    batch.points.forEach(pt => {
+                      if (pt && typeof pt.latitude === 'number' && typeof pt.longitude === 'number' && !existingTimestamps.has(pt.timestamp)) {
+                        cachedAllPoints.push(pt);
+                        existingTimestamps.add(pt.timestamp);
+                      }
+                    });
+                    if (batch.endTime && batch.endTime > lastKnownSeen) {
+                      lastKnownSeen = batch.endTime;
                     }
-                  });
-                }
+                  }
+                });
               }
             }
           } catch (deltaErr) {
             console.warn("Delta query error:", deltaErr);
           }
-          lastKnownSeen = deviceLastSeen;
+          lastKnownSeen = Math.max(lastKnownSeen, deviceLastSeen);
         }
 
         // 3) UI 일괄 업데이트 (값 덮어쓰기 깜빡임 방지)
@@ -1142,8 +1186,8 @@
           // 시간순 정렬 (과거 -> 최신)
           cachedAllPoints.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
 
-          // 맵 궤적 업데이트
-          pathCoordinates = cachedAllPoints.map(pt => [pt.latitude, pt.longitude]);
+          // 맵 궤적 업데이트 (15분 이상 공백 시 직선 잇기 방지)
+          pathCoordinates = buildTrackSegments(cachedAllPoints);
           polyline.setLatLngs(pathCoordinates);
 
           // 가장 최신 위치
