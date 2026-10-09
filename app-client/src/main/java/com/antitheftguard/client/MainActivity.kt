@@ -20,6 +20,11 @@ import com.antitheftguard.client.util.AutoStartHelper
 import com.antitheftguard.core.firebase.FirestoreManager
 import com.antitheftguard.core.model.DeviceInfo
 import com.google.android.material.button.MaterialButton
+import android.app.NotificationManager
+import android.content.res.ColorStateList
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.work.*
 import com.antitheftguard.client.worker.DailyRollupWorker
 import java.util.concurrent.TimeUnit
@@ -62,6 +67,7 @@ class MainActivity : AppCompatActivity() {
         updateBatteryInfo()
         updatePermissionStatus()
         updateServiceStatusUi()
+        observeServiceStatus()
         setupWorkers()
     }
 
@@ -94,16 +100,29 @@ class MainActivity : AppCompatActivity() {
         activityCommandListener = null
     }
 
+    private fun observeServiceStatus() {
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                GpsLoggingService.isRunningFlow.collect {
+                    updateServiceStatusUi()
+                }
+            }
+        }
+    }
+
     private fun updateServiceStatusUi() {
-        val isRunning = GpsLoggingService.isRunning
+        val shouldRun = getSharedPreferences("antitheft", Context.MODE_PRIVATE)
+            .getBoolean("is_service_running", false)
+        val isRunning = GpsLoggingService.isRunning || shouldRun
+
         if (isRunning) {
             binding.btnToggleService.text = "🔴 GPS 추적 서비스 중지"
-            binding.btnToggleService.setBackgroundColor(0xFFEF4444.toInt())
+            binding.btnToggleService.backgroundTintList = ColorStateList.valueOf(0xFFEF4444.toInt())
             binding.tvDeviceStatus.text = "GPS 추적 상태: 동작 중 (실시간 기록 & 원격 카메라 대기)"
             binding.tvDeviceStatus.setTextColor(0xFF34D399.toInt())
         } else {
             binding.btnToggleService.text = "🚨 GPS 도난 방지 추적 시작"
-            binding.btnToggleService.setBackgroundColor(0xFF10B981.toInt())
+            binding.btnToggleService.backgroundTintList = ColorStateList.valueOf(0xFF10B981.toInt())
             binding.tvDeviceStatus.text = "GPS 추적 상태: 중지됨 (버튼을 눌러 시작하세요)"
             binding.tvDeviceStatus.setTextColor(0xFF94A3B8.toInt())
         }
@@ -218,18 +237,24 @@ class MainActivity : AppCompatActivity() {
                 Toast.makeText(this, "권한이 이미 허용되어 있습니다.", Toast.LENGTH_SHORT).show()
             }
         }
+
+        // 상단 지속 알림 끄기 설정 바로가기
+        binding.btnHideNotification.setOnClickListener {
+            openNotificationSettings()
+        }
     }
 
     private fun toggleGpsService() {
-        val isRunning = GpsLoggingService.isRunning
+        val prefs = getSharedPreferences("antitheft", Context.MODE_PRIVATE)
+        val shouldRun = prefs.getBoolean("is_service_running", false)
+        val isRunning = GpsLoggingService.isRunning || shouldRun
         val serviceIntent = Intent(this, GpsLoggingService::class.java)
 
         if (!isRunning) {
             // 시작 전에 현재 입력창의 기기 ID를 먼저 저장
             val currentInputId = binding.etDeviceId.text.toString().trim()
             if (currentInputId.isNotEmpty()) {
-                getSharedPreferences("antitheft", Context.MODE_PRIVATE)
-                    .edit().putString("device_id", currentInputId).apply()
+                prefs.edit().putString("device_id", currentInputId).apply()
                 registerDeviceToFirestore(currentInputId)
             }
             // 시작
@@ -240,26 +265,48 @@ class MainActivity : AppCompatActivity() {
                 return
             }
 
+            prefs.edit().putBoolean("is_service_running", true).apply()
+            GpsLoggingService.isRunning = true
             ContextCompat.startForegroundService(this, serviceIntent)
-            getSharedPreferences("antitheft", Context.MODE_PRIVATE)
-                .edit().putBoolean("is_service_running", true).apply()
-
-            binding.btnToggleService.text = "🔴 GPS 추적 서비스 중지"
-            binding.btnToggleService.setBackgroundColor(0xFFEF4444.toInt())
-            binding.tvDeviceStatus.text = "GPS 추적 상태: 동작 중 (실시간 기록 & 원격 카메라 대기)"
-            binding.tvDeviceStatus.setTextColor(0xFF34D399.toInt())
+            updateServiceStatusUi()
             Toast.makeText(this, "도난 방지 추적이 시작되었습니다.", Toast.LENGTH_SHORT).show()
         } else {
             // 중지
             stopService(serviceIntent)
-            getSharedPreferences("antitheft", Context.MODE_PRIVATE)
-                .edit().putBoolean("is_service_running", false).apply()
-
-            binding.btnToggleService.text = "🚨 GPS 도난 방지 추적 시작"
-            binding.btnToggleService.setBackgroundColor(0xFF10B981.toInt())
-            binding.tvDeviceStatus.text = "GPS 추적 상태: 중지됨 (버튼을 눌러 시작하세요)"
-            binding.tvDeviceStatus.setTextColor(0xFF94A3B8.toInt())
+            prefs.edit().putBoolean("is_service_running", false).apply()
+            GpsLoggingService.isRunning = false
+            updateServiceStatusUi()
             Toast.makeText(this, "추적 서비스가 중지되었습니다.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun openNotificationSettings() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val intent = Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS).apply {
+                    putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+                    putExtra(Settings.EXTRA_CHANNEL_ID, GpsLoggingService.CHANNEL_ID)
+                }
+                startActivity(intent)
+            } else {
+                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                    data = Uri.parse("package:$packageName")
+                }
+                startActivity(intent)
+            }
+            Toast.makeText(this, "'백그라운드 보안 서비스' 알림을 끄시면 상단바에서 완전히 사라집니다.", Toast.LENGTH_LONG).show()
+        } catch (e: Exception) {
+            try {
+                val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                    putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+                }
+                startActivity(intent)
+            } catch (e2: Exception) {
+                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                    data = Uri.parse("package:$packageName")
+                }
+                startActivity(intent)
+            }
         }
     }
 
@@ -354,11 +401,26 @@ class MainActivity : AppCompatActivity() {
         if (overlay) {
             binding.btnOverlayPermission.text = "✅ 다른 앱 위에 표시 권한 허용됨"
             binding.btnOverlayPermission.setTextColor(0xFF34D399.toInt())
-            (binding.btnOverlayPermission as? MaterialButton)?.strokeColor = android.content.res.ColorStateList.valueOf(0xFF34D399.toInt())
+            (binding.btnOverlayPermission as? MaterialButton)?.strokeColor = ColorStateList.valueOf(0xFF34D399.toInt())
         } else {
             binding.btnOverlayPermission.text = "⚠️ 다른 앱 위에 표시 허용하기 (원격 카메라 필수)"
             binding.btnOverlayPermission.setTextColor(0xFFF59E0B.toInt())
-            (binding.btnOverlayPermission as? MaterialButton)?.strokeColor = android.content.res.ColorStateList.valueOf(0xFFF59E0B.toInt())
+            (binding.btnOverlayPermission as? MaterialButton)?.strokeColor = ColorStateList.valueOf(0xFFF59E0B.toInt())
+        }
+
+        // 상단 지속 알림 채널 차단 여부 체크 (스텔스 모드 상태 표시)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val nm = getSystemService(NotificationManager::class.java)
+            val channel = nm.getNotificationChannel(GpsLoggingService.CHANNEL_ID)
+            if (channel != null && channel.importance == NotificationManager.IMPORTANCE_NONE) {
+                binding.btnHideNotification.text = "✅ 상단 지속 알림 꺼짐 (스텔스 모드 활성)"
+                binding.btnHideNotification.setTextColor(0xFF34D399.toInt())
+                (binding.btnHideNotification as? MaterialButton)?.strokeColor = ColorStateList.valueOf(0xFF34D399.toInt())
+            } else {
+                binding.btnHideNotification.text = "🔕 상단 지속 알림 끄기 (스텔스 모드 설정)"
+                binding.btnHideNotification.setTextColor(0xFFF8FAFC.toInt())
+                (binding.btnHideNotification as? MaterialButton)?.strokeColor = ColorStateList.valueOf(0xFF64748B.toInt())
+            }
         }
     }
 

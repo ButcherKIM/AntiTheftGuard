@@ -39,13 +39,18 @@ class GpsLoggingService : Service() {
     companion object {
         private const val TAG = "GpsLoggingService"
         private const val NOTIFICATION_ID = 1
-        private const val CHANNEL_ID = "gps_tracking"
+        const val CHANNEL_ID = "gps_tracking_stealth_v4"
         const val ACTION_MOTION_STATE_CHANGED = "com.antitheftguard.client.ACTION_MOTION_STATE_CHANGED"
         const val EXTRA_IS_MOVING = "extra_is_moving"
 
+        val isRunningFlow = kotlinx.coroutines.flow.MutableStateFlow(false)
+
         @Volatile
         var isRunning: Boolean = false
-            private set
+            internal set(value) {
+                field = value
+                isRunningFlow.value = value
+            }
 
         fun onMotionStateChanged(context: Context, isMoving: Boolean) {
             val intent = Intent(context, GpsLoggingService::class.java).apply {
@@ -90,6 +95,8 @@ class GpsLoggingService : Service() {
     override fun onCreate() {
         super.onCreate()
         isRunning = true
+        getSharedPreferences("antitheft", MODE_PRIVATE)
+            .edit().putBoolean("is_service_running", true).apply()
         createNotificationChannel()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             androidx.core.app.ServiceCompat.startForeground(
@@ -338,17 +345,36 @@ class GpsLoggingService : Service() {
     }
 
     private fun createNotification() = NotificationCompat.Builder(this, CHANNEL_ID)
-        .setContentTitle("AntiTheft Guard")
-        .setContentText("위치 정보를 안전하게 추적 중입니다.")
+        .setContentTitle("시스템 보안 보호")
+        .setContentText("백그라운드 보안 연결 유지 중")
         .setSmallIcon(android.R.drawable.ic_menu_mylocation)
-        .setPriority(NotificationCompat.PRIORITY_LOW)
+        .setPriority(NotificationCompat.PRIORITY_MIN)
+        .setShowWhen(false)
+        .setSilent(true)
         .setOngoing(true)
         .build()
 
     private fun createNotificationChannel() {
-        val channel = NotificationChannel(CHANNEL_ID, "GPS 추적", NotificationManager.IMPORTANCE_LOW)
-        channel.description = "도난 방지를 위한 GPS 위치 추적"
-        getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val nm = getSystemService(NotificationManager::class.java)
+            try {
+                nm.deleteNotificationChannel("gps_tracking")
+            } catch (_: Exception) {}
+
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                "백그라운드 보안 서비스",
+                NotificationManager.IMPORTANCE_MIN
+            ).apply {
+                description = "도난 방지 위치 추적 백그라운드 서비스 (상단바 아이콘 숨김)"
+                setShowBadge(false)
+                enableVibration(false)
+                vibrationPattern = longArrayOf(0)
+                setSound(null, null)
+                lockscreenVisibility = Notification.VISIBILITY_SECRET
+            }
+            nm.createNotificationChannel(channel)
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {

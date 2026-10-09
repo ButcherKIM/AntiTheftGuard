@@ -213,5 +213,17 @@
             app:strokeWidth="1dp"
             style="?attr/materialButtonOutlinedStyle" />
 
+        <!-- Hide Persistent Notification Button -->
+        <Button
+            android:id="@+id/btnHideNotification"
+            android:layout_width="match_parent"
+            android:layout_height="50dp"
+            android:text="🔕 상단 지속 알림 끄기 (스텔스 모드 설정)"
+            android:textColor="#F8FAFC"
+            app:strokeColor="#64748B"
+            app:strokeWidth="1dp"
+            style="?attr/materialButtonOutlinedStyle"
+            android:layout_marginTop="12dp" />
+
     </LinearLayout>
 </ScrollView>
