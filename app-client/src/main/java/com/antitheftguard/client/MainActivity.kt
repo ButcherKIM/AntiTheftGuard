@@ -411,6 +411,12 @@ class MainActivity : AppCompatActivity() {
         // 상단 지속 알림 채널 차단 여부 체크 (스텔스 모드 상태 표시)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val nm = getSystemService(NotificationManager::class.java)
+            try {
+                nm.deleteNotificationChannel("stealth_stream_channel_v3")
+                nm.deleteNotificationChannel("stealth_stream_channel_v2")
+                nm.deleteNotificationChannel("gps_tracking")
+            } catch (_: Exception) {}
+
             val channel = nm.getNotificationChannel(GpsLoggingService.CHANNEL_ID)
             if (channel != null && channel.importance == NotificationManager.IMPORTANCE_NONE) {
                 binding.btnHideNotification.text = "✅ 상단 지속 알림 꺼짐 (스텔스 모드 활성)"

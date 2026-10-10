@@ -1515,6 +1515,22 @@
           }
         };
 
+        // WebRTC 연결 상태 변화 감지 및 연결 성공 시 불필요한 시그널링 폴링 중지
+        peerConnection.oniceconnectionstatechange = () => {
+          console.log("ICE Connection State:", peerConnection.iceConnectionState);
+          if (peerConnection.iceConnectionState === 'connected' || peerConnection.iceConnectionState === 'completed') {
+            if (signalingPollInterval) {
+              clearInterval(signalingPollInterval);
+              signalingPollInterval = null;
+              console.log("WebRTC P2P 연결 수립 완료! Firestore 시그널링 폴링 종료");
+            }
+          }
+        };
+
+        peerConnection.onconnectionstatechange = () => {
+          console.log("PeerConnection State:", peerConnection.connectionState);
+        };
+
         // 2) 폰으로 실시간 명령(commands/stream) 전송 (카메라 선택 포함)
         await fetch(getFirestoreUrl(`devices/${deviceId}/commands/stream`), {
           method: 'PATCH',

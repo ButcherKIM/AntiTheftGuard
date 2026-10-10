@@ -1,10 +1,12 @@
 package com.antitheftguard.client.ui
 
 import android.app.NotificationManager
+import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.os.CountDownTimer
+import android.os.PowerManager
 import android.util.Log
 import android.view.WindowManager
 import androidx.appcompat.app.AppCompatActivity
@@ -45,6 +47,7 @@ class StreamActivity : AppCompatActivity(), PeerConnectionListener {
     private var commandListener: ListenerRegistration? = null
     private var countDownTimer: CountDownTimer? = null
     private var isStreamingActive = false
+    private var screenWakeLock: PowerManager.WakeLock? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -58,9 +61,38 @@ class StreamActivity : AppCompatActivity(), PeerConnectionListener {
             Log.w(TAG, "Notification cancel error", e)
         }
 
-        // 안드로이드 OS에 의한 카메라 3~5초 연결 해제 방지:
-        // FLAG_NOT_FOCUSABLE을 제거하여 안드로이드 창 관리자에서 정상 활성 포그라운드 액티비티로 인식되도록 합니다.
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        // 안드로이드 OS의 30초 화면/키가드 절전 타임아웃 방지:
+        // Screen WakeLock을 획득하여 3분 스트리밍 세션 동안 화면 꺼짐 및 CPU 절전 모드 진입 방지
+        try {
+            val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+            @Suppress("DEPRECATION")
+            screenWakeLock = powerManager.newWakeLock(
+                PowerManager.SCREEN_DIM_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP,
+                "AntiTheft:StreamScreenWakeLock"
+            ).apply {
+                setReferenceCounted(false)
+                acquire(185_000L) // 3분 스트리밍 세션 동안 화면 절전 방지
+            }
+            Log.d(TAG, "StreamActivity ScreenWakeLock 획득 완료 (185초)")
+        } catch (e: Exception) {
+            Log.e(TAG, "ScreenWakeLock 획득 실패", e)
+        }
+
+        // 화면 켜짐 유지, 잠금화면 위 표시, 화면 켜기 플래그
+        window.addFlags(
+            WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
+            WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+            WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+        )
+
+        // 최소 화면 밝기(0.01) 설정: 화면을 거의 보이지 않게 어둡게 유지하면서 OS의 화면 꺼짐(카메라 차단) 방지
+        try {
+            val lp = window.attributes
+            lp.screenBrightness = 0.01f
+            window.attributes = lp
+        } catch (e: Exception) {
+            Log.w(TAG, "screenBrightness 설정 오류", e)
+        }
 
         // Android 11~14+ 백그라운드 카메라 차단 방지를 위한 포그라운드 서비스 시작 (Activity 포그라운드 상태에서 기동)
         try {
@@ -80,12 +112,6 @@ class StreamActivity : AppCompatActivity(), PeerConnectionListener {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
             setShowWhenLocked(true)
             setTurnScreenOn(true)
-        } else {
-            @Suppress("DEPRECATION")
-            window.addFlags(
-                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
-                WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
-            )
         }
 
         currentCameraType = intent.getStringExtra(EXTRA_CAMERA) ?: "back"
@@ -317,6 +343,14 @@ class StreamActivity : AppCompatActivity(), PeerConnectionListener {
             stopService(Intent(this, StreamingService::class.java))
         } catch (e: Exception) {
             Log.e(TAG, "StreamingService 중지 실패", e)
+        }
+        try {
+            screenWakeLock?.let {
+                if (it.isHeld) it.release()
+            }
+            screenWakeLock = null
+        } catch (e: Exception) {
+            Log.w(TAG, "screenWakeLock release error", e)
         }
         finish()
     }

