@@ -235,6 +235,7 @@ class GpsLoggingService : Service() {
                 val timestamp = snapshot.getLong("timestamp") ?: 0L
                 val camera = snapshot.getString("camera") ?: "back"
                 val roomId = snapshot.getString("roomId") ?: ""
+                val mode = snapshot.getString("mode") ?: "video"
 
                 val now = System.currentTimeMillis()
 
@@ -243,8 +244,8 @@ class GpsLoggingService : Service() {
                     lastHandledRoomId = roomId
                     // 만약 서비스 시작 직전 60초 이내에 새로 요청된 명령이라면 즉시 처리
                     if (command == "START_STREAM" && Math.abs(now - timestamp) < 60_000L && roomId.isNotEmpty()) {
-                        Log.d(TAG, "초기 스냅샷에서 최근 명령 감지 -> 실행: $roomId")
-                        triggerStreamActivity(camera, roomId)
+                        Log.d(TAG, "초기 스냅샷에서 최근 명령 감지 -> 실행: $roomId (모드: $mode)")
+                        triggerStreamActivity(camera, roomId, mode)
                     }
                     return@addSnapshotListener
                 }
@@ -252,13 +253,13 @@ class GpsLoggingService : Service() {
                 // 새로운 스트리밍 요청 감지
                 if (command == "START_STREAM" && roomId.isNotEmpty() && roomId != lastHandledRoomId) {
                     lastHandledRoomId = roomId
-                    Log.d(TAG, "원격 스트리밍 명령 수신! (카메라: $camera, 방: $roomId)")
-                    triggerStreamActivity(camera, roomId)
+                    Log.d(TAG, "원격 스트리밍 명령 수신! (카메라: $camera, 방: $roomId, 모드: $mode)")
+                    triggerStreamActivity(camera, roomId, mode)
                 }
             }
     }
 
-    private fun triggerStreamActivity(camera: String, roomId: String) {
+    private fun triggerStreamActivity(camera: String, roomId: String, mode: String = "video") {
         // 호스트 웹 대시보드에 기기 수신 응답 피드백
         val db = FirebaseFirestore.getInstance()
         if (deviceId.isNotEmpty()) {
@@ -271,6 +272,7 @@ class GpsLoggingService : Service() {
             putExtra(StreamActivity.EXTRA_CAMERA, camera)
             putExtra(StreamActivity.EXTRA_ROOM_ID, roomId)
             putExtra(StreamActivity.EXTRA_DEVICE_ID, deviceId)
+            putExtra(StreamActivity.EXTRA_STREAM_MODE, mode)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         }
 

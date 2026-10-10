@@ -397,6 +397,47 @@
       transform: scale(0.98);
     }
 
+    .btn-action-audio {
+      background: linear-gradient(135deg, #059669, #10b981);
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      padding: 13px;
+      font-size: 0.95rem;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      transition: background 0.2s, transform 0.1s, box-shadow 0.2s;
+      width: 100%;
+      box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25);
+    }
+
+    .btn-action-audio:hover {
+      background: linear-gradient(135deg, #047857, #059669);
+      box-shadow: 0 6px 16px rgba(16, 185, 129, 0.4);
+    }
+
+    .btn-action-audio:active {
+      transform: scale(0.98);
+    }
+
+    .btn-action-audio:disabled {
+      opacity: 0.65;
+      cursor: not-allowed;
+    }
+
+    .audio-pulse {
+      animation: audioPulse 1.5s ease-in-out infinite;
+    }
+
+    @keyframes audioPulse {
+      0%, 100% { transform: scale(1); opacity: 0.85; }
+      50% { transform: scale(1.15); opacity: 1; }
+    }
+
     .btn-action-secondary {
       background: var(--bg-card);
       border: 1px solid var(--border);
@@ -604,7 +645,7 @@
           </div>
 
           <!-- Camera Selection Dropdown & Live Switch Button -->
-          <div style="display: flex; flex-direction: column; gap: 6px;">
+          <div id="camera-selection-container" style="display: flex; flex-direction: column; gap: 6px;">
             <label style="font-size: 0.8rem; color: var(--text-muted); font-weight: 600;">
               <i class="fa-solid fa-camera"></i> 촬영 카메라 선택 (전송 중 실시간 전환 가능):
             </label>
@@ -620,12 +661,17 @@
           </div>
 
           <!-- Action Buttons -->
-          <button class="btn-action-primary" id="btn-start-stream">
-            <i class="fa-solid fa-tower-broadcast"></i> 3분간 실시간 스트리밍 요청
-          </button>
+          <div id="stream-start-buttons-group" style="display: flex; flex-direction: column; gap: 8px;">
+            <button class="btn-action-primary" id="btn-start-stream">
+              <i class="fa-solid fa-video"></i> 3분간 실시간 영상+음성 요청
+            </button>
+            <button class="btn-action-audio" id="btn-start-audio" type="button">
+              <i class="fa-solid fa-microphone-lines"></i> 3분간 실시간 음성만 듣기 (저전력/경량)
+            </button>
+          </div>
 
           <button class="btn-action-secondary" id="btn-record-stream" style="display: none;">
-            <i class="fa-solid fa-record-vinyl" style="color: var(--danger);"></i> 증거 영상 녹화 및 다운로드
+            <i class="fa-solid fa-record-vinyl" style="color: var(--danger);"></i> 증거 파일 녹음/녹화 및 다운로드
           </button>
 
           <button class="btn-action-secondary" id="btn-stop-stream" style="display: none;">
@@ -1396,6 +1442,9 @@
     };
 
     const btnStart = document.getElementById('btn-start-stream');
+    const btnStartAudio = document.getElementById('btn-start-audio');
+    const streamStartGroup = document.getElementById('stream-start-buttons-group');
+    const cameraSelectionContainer = document.getElementById('camera-selection-container');
     const btnStop = document.getElementById('btn-stop-stream');
     const btnRecord = document.getElementById('btn-record-stream');
     const remoteVideo = document.getElementById('remote-video');
@@ -1403,6 +1452,8 @@
     const liveBadge = document.getElementById('live-badge');
     const timerElem = document.getElementById('stream-timer');
     const btnAudio = document.getElementById('btn-toggle-audio');
+
+    let activeStreamMode = 'video';
 
     function updateAudioUi(isPlayingSound) {
       if (!btnAudio) return;
@@ -1438,8 +1489,18 @@
         alert("기기 ID를 먼저 입력하거나 선택해주세요!");
         return;
       }
-      startRemoteStream(currentDeviceId);
+      startRemoteStream(currentDeviceId, 'video');
     });
+
+    if (btnStartAudio) {
+      btnStartAudio.addEventListener('click', async () => {
+        if (!currentDeviceId) {
+          alert("기기 ID를 먼저 입력하거나 선택해주세요!");
+          return;
+        }
+        startRemoteStream(currentDeviceId, 'audio_only');
+      });
+    }
 
     btnStop.addEventListener('click', () => {
       stopRemoteStream();
@@ -1447,9 +1508,33 @@
 
     let signalingPollInterval = null;
 
-    async function startRemoteStream(deviceId) {
-      btnStart.disabled = true;
-      btnStart.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 기기 연결 신호 전송 중...`;
+    function resetStartButtons() {
+      if (streamStartGroup) streamStartGroup.style.display = 'flex';
+      btnStart.style.display = 'flex';
+      btnStart.disabled = false;
+      btnStart.innerHTML = `<i class="fa-solid fa-video"></i> 3분간 실시간 영상+음성 요청`;
+      if (btnStartAudio) {
+        btnStartAudio.style.display = 'flex';
+        btnStartAudio.disabled = false;
+        btnStartAudio.innerHTML = `<i class="fa-solid fa-microphone-lines"></i> 3분간 실시간 음성만 듣기 (저전력/경량)`;
+      }
+    }
+
+    async function startRemoteStream(deviceId, streamMode = 'video') {
+      activeStreamMode = streamMode;
+      const isAudioOnly = streamMode === 'audio_only';
+
+      if (isAudioOnly) {
+        if (btnStartAudio) {
+          btnStartAudio.disabled = true;
+          btnStartAudio.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 음성 연결 신호 전송 중...`;
+        }
+        btnStart.style.display = 'none';
+      } else {
+        btnStart.disabled = true;
+        btnStart.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 기기 연결 신호 전송 중...`;
+        if (btnStartAudio) btnStartAudio.style.display = 'none';
+      }
 
       // 사용자 클릭 제스처 시점에 오디오 음소거 해제 준비
       remoteVideo.muted = false;
@@ -1466,18 +1551,38 @@
         }
         peerConnection = new RTCPeerConnection(rtcConfig);
 
-        // WebRTC 수신 트랙 처리 (화면 표시)
+        // WebRTC 수신 트랙 처리 (화면/음성 표시)
         peerConnection.ontrack = (event) => {
-          console.log("영상/오디오 트랙 수신 성공!", event.track.kind, event.streams);
+          console.log("트랙 수신 성공!", event.track.kind, event.streams);
           if (event.streams && event.streams[0]) {
             remoteVideo.srcObject = event.streams[0];
-            placeholder.style.display = 'none';
+
+            if (activeStreamMode === 'audio_only') {
+              placeholder.style.display = 'flex';
+              placeholder.innerHTML = `
+                <i class="fa-solid fa-microphone-lines audio-pulse" style="font-size: 3.2rem; color: #10b981; margin-bottom: 12px;"></i>
+                <span style="font-weight: 700; color: #34d399; font-size: 1.05rem;">실시간 마이크 음성 청취 중</span>
+                <span style="font-size: 0.8rem; color: #94a3b8; margin-top: 4px;">클라이언트 화면 꺼짐 (저전력 스텔스 모드)</span>
+              `;
+              liveBadge.innerHTML = `<i class="fa-solid fa-circle"></i> LIVE AUDIO`;
+              if (cameraSelectionContainer) cameraSelectionContainer.style.display = 'none';
+              document.getElementById('btn-toggle-camera').style.display = 'none';
+              btnStop.innerHTML = `<i class="fa-solid fa-phone-slash"></i> 음성 청취 중지`;
+              btnRecord.innerHTML = `<i class="fa-solid fa-record-vinyl" style="color: var(--danger);"></i> 증거 음성 녹음 및 다운로드`;
+            } else {
+              placeholder.style.display = 'none';
+              liveBadge.innerHTML = `<i class="fa-solid fa-circle"></i> LIVE`;
+              if (cameraSelectionContainer) cameraSelectionContainer.style.display = 'flex';
+              document.getElementById('btn-toggle-camera').style.display = 'inline-flex';
+              btnStop.innerHTML = `<i class="fa-solid fa-video-slash"></i> 스트리밍 중지`;
+              btnRecord.innerHTML = `<i class="fa-solid fa-record-vinyl" style="color: var(--danger);"></i> 증거 영상 녹화 및 다운로드`;
+            }
+
             liveBadge.style.display = 'flex';
             timerElem.style.display = 'block';
-            btnStart.style.display = 'none';
+            if (streamStartGroup) streamStartGroup.style.display = 'none';
             btnStop.style.display = 'flex';
             btnRecord.style.display = 'flex';
-            document.getElementById('btn-toggle-camera').style.display = 'inline-flex';
             if (btnAudio) btnAudio.style.display = 'inline-flex';
             startStreamTimer(180); // 3분 타이머 시작
 
@@ -1531,14 +1636,15 @@
           console.log("PeerConnection State:", peerConnection.connectionState);
         };
 
-        // 2) 폰으로 실시간 명령(commands/stream) 전송 (카메라 선택 포함)
+        // 2) 폰으로 실시간 명령(commands/stream) 전송 (모드 및 카메라 파라미터 포함)
         await fetch(getFirestoreUrl(`devices/${deviceId}/commands/stream`), {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             fields: {
               command: { stringValue: "START_STREAM" },
-              camera: { stringValue: cameraChoice },
+              camera: { stringValue: (isAudioOnly ? "none" : cameraChoice) },
+              mode: { stringValue: streamMode },
               roomId: { stringValue: roomId },
               timestamp: { integerValue: String(Date.now()) },
               status: { stringValue: "PENDING" }
@@ -1546,7 +1652,10 @@
           })
         });
 
-        btnStart.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 기기 카메라 응답 대기 중...`;
+        const activeBtn = isAudioOnly ? btnStartAudio : btnStart;
+        if (activeBtn) {
+          activeBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 기기 ${isAudioOnly ? '마이크' : '카메라'} 응답 대기 중...`;
+        }
 
         // 3) 안드로이드 폰의 Offer SDP 및 ICE 후보군 폴링 감시
         let hasReceivedOffer = false;
@@ -1566,13 +1675,14 @@
                 if (cmdRes.ok) {
                   const cmdDoc = await cmdRes.json();
                   const parsedCmd = parseFirestoreDoc(cmdDoc);
-                  if (parsedCmd) {
+                  if (parsedCmd && activeBtn) {
+                    const modeLabel = isAudioOnly ? "음성" : "영상";
                     if (parsedCmd.status === "OFFER_SENT") {
-                      btnStart.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 영상 전송 준비 완료! 채널 협상 중...`;
+                      activeBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> ${modeLabel} 전송 준비 완료! 채널 협상 중...`;
                     } else if (parsedCmd.status === "STREAM_ACTIVITY_STARTED") {
-                      btnStart.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 카메라 구동 시작! 영상 생성 중...`;
+                      activeBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> ${isAudioOnly ? '마이크 구동 시작! 음성 스트림 생성 중...' : '카메라 구동 시작! 영상 생성 중...'}`;
                     } else if (parsedCmd.status === "DEVICE_RECEIVED") {
-                      btnStart.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 기기 신호 수신 확인! 카메라 여는 중...`;
+                      activeBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 기기 신호 수신 확인! ${isAudioOnly ? '마이크 여는 중...' : '카메라 여는 중...'}`;
                     }
                   }
                 }
@@ -1584,7 +1694,9 @@
                 const parsed = parseFirestoreDoc(roomDoc);
                 if (parsed && parsed.offer) {
                   hasReceivedOffer = true;
-                  btnStart.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> 영상 수신 채널 협상 중...`;
+                  if (activeBtn) {
+                    activeBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> ${isAudioOnly ? '음성' : '영상'} 수신 채널 협상 중...`;
+                  }
                   
                   const offerDesc = new RTCSessionDescription({ type: 'offer', sdp: parsed.offer });
                   await peerConnection.setRemoteDescription(offerDesc);
@@ -1610,8 +1722,7 @@
             if (!hasReceivedOffer && commandPollCount > 45) {
               clearInterval(signalingPollInterval);
               signalingPollInterval = null;
-              btnStart.disabled = false;
-              btnStart.innerHTML = `<i class="fa-solid fa-video"></i> 3분간 실시간 스트리밍 요청`;
+              resetStartButtons();
               alert("⚠️ 기기에서 응답이 없습니다.\n\n[확인 사항]\n1. 스마트폰에서 AntiTheft 앱을 열고 [🚨 GPS 도난 방지 추적 시작] 버튼이 켜져 있는지 확인\n2. 앱 화면의 [📷 원격 카메라 실행 권한 (다른 앱 위에 표시)] 버튼을 눌러 권한을 허용했는지 확인\n3. 알림 권한이 허용되어 있는지 확인해 주세요.");
             }
 
@@ -1647,8 +1758,7 @@
       } catch (e) {
         console.error("Signaling error:", e);
         alert("스트리밍 요청 전송 실패: " + e.message);
-        btnStart.disabled = false;
-        btnStart.innerHTML = `<i class="fa-solid fa-tower-broadcast"></i> 3분간 실시간 스트리밍 요청`;
+        resetStartButtons();
       }
     }
 
@@ -1689,17 +1799,25 @@
         }).catch(e => console.warn("STOP_STREAM error:", e));
       }
 
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        try { mediaRecorder.stop(); } catch (e) {}
+      }
+
       remoteVideo.srcObject = null;
       placeholder.style.display = 'flex';
+      placeholder.innerHTML = `
+        <i class="fa-solid fa-camera-rotate"></i>
+        <span>스트리밍 대기 중</span>
+      `;
       liveBadge.style.display = 'none';
       timerElem.style.display = 'none';
-      btnStart.style.display = 'flex';
-      btnStart.disabled = false;
-      btnStart.innerHTML = `<i class="fa-solid fa-tower-broadcast"></i> 3분간 실시간 스트리밍 요청`;
+      resetStartButtons();
+      if (cameraSelectionContainer) cameraSelectionContainer.style.display = 'flex';
       btnStop.style.display = 'none';
       btnRecord.style.display = 'none';
       document.getElementById('btn-toggle-camera').style.display = 'none';
       if (btnAudio) btnAudio.style.display = 'none';
+      activeStreamMode = 'video';
     }
 
     // 실시간 카메라 옵션 전환 (스트리밍 중 즉각 전/후면 전환 반영, 상태 감지 및 비디오 멈춤 방지)
@@ -1707,7 +1825,7 @@
 
     async function requestCameraSwitch(targetCam) {
       if (isCameraSwitching) return;
-      if (!peerConnection || !currentDeviceId) return;
+      if (!peerConnection || !currentDeviceId || activeStreamMode === 'audio_only') return;
 
       isCameraSwitching = true;
       const btnToggle = document.getElementById('btn-toggle-camera');
@@ -1785,23 +1903,45 @@
     btnRecord.addEventListener('click', () => {
       const stream = remoteVideo.srcObject;
       if (!stream) {
-        alert("활성화된 실시간 영상 스트림이 없습니다.");
+        alert("활성화된 실시간 미디어 스트림이 없습니다.");
         return;
       }
 
+      const isAudioOnly = activeStreamMode === 'audio_only';
+
       if (!mediaRecorder || mediaRecorder.state === 'inactive') {
         recordedChunks = [];
-        mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+
+        // 브라우저별 최적 지원 MIME 타입 선택 (오디오/비디오 자동 판별)
+        let mimeType = '';
+        if (isAudioOnly) {
+          if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) mimeType = 'audio/webm;codecs=opus';
+          else if (MediaRecorder.isTypeSupported('audio/webm')) mimeType = 'audio/webm';
+          else if (MediaRecorder.isTypeSupported('video/webm')) mimeType = 'video/webm';
+        } else {
+          if (MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')) mimeType = 'video/webm;codecs=vp8,opus';
+          else if (MediaRecorder.isTypeSupported('video/webm')) mimeType = 'video/webm';
+        }
+
+        try {
+          mediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+        } catch (recErr) {
+          console.warn("MIME 타입 미지원, 기본 인코더로 생성:", recErr);
+          mediaRecorder = new MediaRecorder(stream);
+        }
+
         mediaRecorder.ondataavailable = (e) => {
           if (e.data.size > 0) recordedChunks.push(e.data);
         };
+
         mediaRecorder.onstop = () => {
-          const blob = new Blob(recordedChunks, { type: 'video/webm' });
+          const blobType = mimeType || (isAudioOnly ? 'audio/webm' : 'video/webm');
+          const blob = new Blob(recordedChunks, { type: blobType });
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
           a.style.display = 'none';
           a.href = url;
-          a.download = `AntiTheft_Evidence_${Date.now()}.webm`;
+          a.download = isAudioOnly ? `AntiTheft_Audio_${Date.now()}.webm` : `AntiTheft_Evidence_${Date.now()}.webm`;
           document.body.appendChild(a);
           a.click();
           setTimeout(() => {
@@ -1809,11 +1949,12 @@
             window.URL.revokeObjectURL(url);
           }, 100);
         };
+
         mediaRecorder.start();
-        btnRecord.innerHTML = `<i class="fa-solid fa-stop" style="color: var(--danger);"></i> 녹화 중지 및 파일 저장`;
+        btnRecord.innerHTML = `<i class="fa-solid fa-stop" style="color: var(--danger);"></i> ${isAudioOnly ? '녹음 중지 및 파일 저장' : '녹화 중지 및 파일 저장'}`;
       } else {
         mediaRecorder.stop();
-        btnRecord.innerHTML = `<i class="fa-solid fa-record-vinyl" style="color: var(--danger);"></i> 증거 영상 녹화 및 다운로드`;
+        btnRecord.innerHTML = `<i class="fa-solid fa-record-vinyl" style="color: var(--danger);"></i> ${isAudioOnly ? '증거 음성 녹음 및 다운로드' : '증거 영상 녹화 및 다운로드'}`;
       }
     });
 

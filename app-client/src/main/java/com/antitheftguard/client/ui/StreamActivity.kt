@@ -34,6 +34,9 @@ class StreamActivity : AppCompatActivity(), PeerConnectionListener {
         const val EXTRA_CAMERA = "extra_camera"
         const val EXTRA_ROOM_ID = "extra_room_id"
         const val EXTRA_DEVICE_ID = "extra_device_id"
+        const val EXTRA_STREAM_MODE = "extra_stream_mode"
+        const val MODE_VIDEO = "video"
+        const val MODE_AUDIO_ONLY = "audio_only"
     }
 
     private lateinit var peerConnectionManager: PeerConnectionManager
@@ -41,6 +44,7 @@ class StreamActivity : AppCompatActivity(), PeerConnectionListener {
 
     private var roomId: String = ""
     private var deviceId: String = ""
+    private var streamMode: String = MODE_VIDEO
     private var currentCameraType: String = "back"
     private var answerListener: ListenerRegistration? = null
     private var candidateListener: ListenerRegistration? = null
@@ -61,43 +65,57 @@ class StreamActivity : AppCompatActivity(), PeerConnectionListener {
             Log.w(TAG, "Notification cancel error", e)
         }
 
-        // 안드로이드 OS의 30초 화면/키가드 절전 타임아웃 방지:
-        // Screen WakeLock을 획득하여 3분 스트리밍 세션 동안 화면 꺼짐 및 CPU 절전 모드 진입 방지
-        try {
-            val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
-            @Suppress("DEPRECATION")
-            screenWakeLock = powerManager.newWakeLock(
-                PowerManager.SCREEN_DIM_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP,
-                "AntiTheft:StreamScreenWakeLock"
-            ).apply {
-                setReferenceCounted(false)
-                acquire(185_000L) // 3분 스트리밍 세션 동안 화면 절전 방지
+        streamMode = intent.getStringExtra(EXTRA_STREAM_MODE) ?: MODE_VIDEO
+        val isAudioOnly = streamMode == MODE_AUDIO_ONLY
+
+        if (!isAudioOnly) {
+            // [영상+음성 모드]: 안드로이드 OS의 30초 화면/키가드 절전 타임아웃 방지
+            try {
+                val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+                @Suppress("DEPRECATION")
+                screenWakeLock = powerManager.newWakeLock(
+                    PowerManager.SCREEN_DIM_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP,
+                    "AntiTheft:StreamScreenWakeLock"
+                ).apply {
+                    setReferenceCounted(false)
+                    acquire(185_000L) // 3분 스트리밍 세션 동안 화면 절전 방지
+                }
+                Log.d(TAG, "StreamActivity ScreenWakeLock 획득 완료 (185초)")
+            } catch (e: Exception) {
+                Log.e(TAG, "ScreenWakeLock 획득 실패", e)
             }
-            Log.d(TAG, "StreamActivity ScreenWakeLock 획득 완료 (185초)")
-        } catch (e: Exception) {
-            Log.e(TAG, "ScreenWakeLock 획득 실패", e)
+
+            // 화면 켜짐 유지, 잠금화면 위 표시, 화면 켜기 플래그
+            window.addFlags(
+                WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
+                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+            )
+
+            // 최소 화면 밝기(0.01) 설정: 화면을 거의 보이지 않게 어둡게 유지하면서 OS의 화면 꺼짐(카메라 차단) 방지
+            try {
+                val lp = window.attributes
+                lp.screenBrightness = 0.01f
+                window.attributes = lp
+            } catch (e: Exception) {
+                Log.w(TAG, "screenBrightness 설정 오류", e)
+            }
+
+            // 화면 켜기 및 잠금 화면 위 동작 (Android 11+ 지원)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                setShowWhenLocked(true)
+                setTurnScreenOn(true)
+            }
+        } else {
+            // [오디오 전용 모드]: 화면을 전혀 켜지 않고 완전 스텔스 저전력 상태로 마이크만 송출
+            Log.d(TAG, "🎙️ 오디오 전용 모드 실행: 화면 켜짐 없이 백그라운드 마이크 스트리밍 시작")
         }
 
-        // 화면 켜짐 유지, 잠금화면 위 표시, 화면 켜기 플래그
-        window.addFlags(
-            WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
-            WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
-            WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
-        )
-
-        // 최소 화면 밝기(0.01) 설정: 화면을 거의 보이지 않게 어둡게 유지하면서 OS의 화면 꺼짐(카메라 차단) 방지
-        try {
-            val lp = window.attributes
-            lp.screenBrightness = 0.01f
-            window.attributes = lp
-        } catch (e: Exception) {
-            Log.w(TAG, "screenBrightness 설정 오류", e)
-        }
-
-        // Android 11~14+ 백그라운드 카메라 차단 방지를 위한 포그라운드 서비스 시작 (Activity 포그라운드 상태에서 기동)
+        // 백그라운드 카메라/마이크 서비스 시작
         try {
             val serviceIntent = Intent(this, StreamingService::class.java).apply {
                 putExtra(StreamingService.EXTRA_ROOM_ID, roomId)
+                putExtra(StreamingService.EXTRA_STREAM_MODE, streamMode)
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 ContextCompat.startForegroundService(this, serviceIntent)
@@ -108,12 +126,6 @@ class StreamActivity : AppCompatActivity(), PeerConnectionListener {
             Log.e(TAG, "StreamingService 시작 실패", e)
         }
 
-        // 화면 켜기 및 잠금 화면 위 동작 (Android 11+ 지원)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-            setShowWhenLocked(true)
-            setTurnScreenOn(true)
-        }
-
         currentCameraType = intent.getStringExtra(EXTRA_CAMERA) ?: "back"
         roomId = intent.getStringExtra(EXTRA_ROOM_ID) ?: "room_${System.currentTimeMillis()}"
         deviceId = intent.getStringExtra(EXTRA_DEVICE_ID) ?: getSharedPreferences("antitheft", MODE_PRIVATE).getString("device_id", "") ?: ""
@@ -122,7 +134,7 @@ class StreamActivity : AppCompatActivity(), PeerConnectionListener {
         if (deviceId.isNotEmpty()) {
             db.collection("devices").document(deviceId)
                 .collection("commands").document("stream")
-                .update("status", "STREAM_ACTIVITY_STARTED")
+                .update("status", "STREAM_ACTIVITY_STARTED", "mode", streamMode)
         }
 
         val isFront = currentCameraType == "front"
@@ -147,7 +159,7 @@ class StreamActivity : AppCompatActivity(), PeerConnectionListener {
                 }
 
                 val requestedCamera = snapshot.getString("camera")
-                if (!requestedCamera.isNullOrEmpty() && requestedCamera != currentCameraType) {
+                if (streamMode != MODE_AUDIO_ONLY && !requestedCamera.isNullOrEmpty() && requestedCamera != currentCameraType && requestedCamera != "none") {
                     Log.d(TAG, "실시간 카메라 변경 요청 감지: 현재 $currentCameraType -> 요청 $requestedCamera")
                     val targetIsFront = requestedCamera == "front"
                     peerConnectionManager.switchCamera { success, isFront ->
@@ -215,19 +227,25 @@ class StreamActivity : AppCompatActivity(), PeerConnectionListener {
             peerConnectionManager.initialize()
             peerConnectionManager.createPeerConnection()
 
-            // 비디오 캡처러 생성 및 트랙 추가
-            val capturer = CameraHelper.createCameraCapturer(this, isFront)
-            if (capturer != null) {
-                val videoTrack = peerConnectionManager.createVideoTrack(capturer)
-                if (videoTrack != null) {
-                    peerConnectionManager.addTrack(videoTrack)
-                    Log.d(TAG, "비디오 트랙 추가 완료 ($currentCameraType)")
+            val isAudioOnly = streamMode == MODE_AUDIO_ONLY
+
+            if (!isAudioOnly) {
+                // 비디오 캡처러 생성 및 트랙 추가 (영상+음성 모드일 때만 카메라 가동)
+                val capturer = CameraHelper.createCameraCapturer(this, isFront)
+                if (capturer != null) {
+                    val videoTrack = peerConnectionManager.createVideoTrack(capturer)
+                    if (videoTrack != null) {
+                        peerConnectionManager.addTrack(videoTrack)
+                        Log.d(TAG, "비디오 트랙 추가 완료 ($currentCameraType)")
+                    }
+                } else {
+                    Log.e(TAG, "카메라를 초기화할 수 없습니다.")
                 }
             } else {
-                Log.e(TAG, "카메라를 초기화할 수 없습니다.")
+                Log.d(TAG, "🎙️ 오디오 전용 스트리밍: 카메라 센서 미가동 (저전력/스텔스)")
             }
 
-            // 오디오 트랙 추가
+            // 오디오 트랙 추가 (모든 모드 공통)
             val audioTrack = peerConnectionManager.createAudioTrack()
             if (audioTrack != null) {
                 audioTrack.setEnabled(true)
@@ -248,10 +266,11 @@ class StreamActivity : AppCompatActivity(), PeerConnectionListener {
 
                     roomRef.set(mapOf(
                         "offer" to sdp.description,
-                        "camera" to currentCameraType,
+                        "mode" to streamMode,
+                        "camera" to if (isAudioOnly) "none" else currentCameraType,
                         "createdAt" to System.currentTimeMillis()
                     )).addOnSuccessListener {
-                        Log.d(TAG, "Offer 등록 완료: $roomId")
+                        Log.d(TAG, "Offer 등록 완료: $roomId (모드: $streamMode)")
                         db.collection("devices").document(deviceId)
                             .collection("commands").document("stream")
                             .update("status", "OFFER_SENT")
