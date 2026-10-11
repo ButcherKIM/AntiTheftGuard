@@ -584,7 +584,7 @@
           <button class="map-btn" id="btn-return-live" style="display: none; background: rgba(16, 185, 129, 0.2); border-color: #10b981; color: #34d399; white-space: nowrap;"><i class="fa-solid fa-satellite-dish"></i> 오늘 실시간</button>
         </div>
         <div id="history-status-msg" style="margin-top: 6px; font-size: 0.82rem; color: var(--text-muted); line-height: 1.4;">
-          조회할 날짜를 선택하면 1개 통합 문서(1회 읽기)로 하루치 전체 경로를 표시합니다.
+          조회할 날짜를 선택하면 하루치 전체 경로를 표시합니다.
         </div>
       </div>
 
@@ -595,9 +595,11 @@
           
           <div class="telemetry-card">
             <div class="telemetry-label"><i class="fa-solid fa-battery-half"></i> 배터리 잔량</div>
-            <div class="telemetry-val" id="val-battery">--%</div>
-            <div class="progress-bar">
-              <div class="progress-fill" id="val-battery-bar"></div>
+            <div style="display: flex; align-items: center; gap: 8px; margin-top: 2px;">
+              <div class="telemetry-val" id="val-battery" style="margin-top: 0; line-height: 1; min-width: 44px;">--%</div>
+              <div class="progress-bar" style="flex: 1; margin-top: 0; height: 6px;">
+                <div class="progress-fill" id="val-battery-bar"></div>
+              </div>
             </div>
           </div>
 
@@ -1032,7 +1034,7 @@
       }
 
       const statusEl = document.getElementById('history-status-msg');
-      statusEl.innerHTML = `<span style="color: #60a5fa"><i class="fa-solid fa-spinner fa-spin"></i> [${dateStr}] 일별 통합 데이터 불러오는 중... (읽기 1회)</span>`;
+      statusEl.innerHTML = `<span style="color: #60a5fa"><i class="fa-solid fa-spinner fa-spin"></i> [${dateStr}] 데이터 불러오는 중...</span>`;
 
       try {
         const res = await fetch(getFirestoreUrl(`devices/${deviceId}/daily_history/${dateStr}`));
@@ -1106,9 +1108,9 @@
         const lastPt = dailyHistoryPoints[dailyHistoryPoints.length - 1];
         updateMapLocation(lastPt.latitude, lastPt.longitude, lastPt.accuracy);
 
-        // 출발지(초록) 및 도착지(빨강) 마커 추가
-        const sTime = new Date(firstPt.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        const eTime = new Date(lastPt.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        // 출발지(초록) 및 도착지(빨강) 마커 추가 (24시간 형식)
+        const sTime = new Date(firstPt.timestamp).toLocaleTimeString('ko-KR', { hour12: false, hour: '2-digit', minute: '2-digit' });
+        const eTime = new Date(lastPt.timestamp).toLocaleTimeString('ko-KR', { hour12: false, hour: '2-digit', minute: '2-digit' });
 
         const startMarker = L.circleMarker([firstPt.latitude, firstPt.longitude], {
           radius: 8,
@@ -1132,23 +1134,23 @@
           map.fitBounds(L.latLngBounds(dailyHistoryPoints.map(p => [p.latitude, p.longitude])), { padding: [40, 40] });
         }
 
-        // 텔레메트리 및 상/하단 바 갱신
+        // 텔레메트리 및 상/하단 바 갱신 (줄수 감소: 조회일자를 추적대상 옆으로, 궤적수 한줄 배치)
         setOnlineStatus(true, `📅 ${dateStr} 일별 롤업`);
         document.getElementById('device-state-tag').innerHTML = 
-          `<div>추적 대상: <strong style="color: #60a5fa">${deviceId}</strong></div>` +
-          `<div style="margin-top: 4px; font-size: 0.82rem; color: #cbd5e1;">` +
+          `<div>추적 대상: <strong style="color: #60a5fa">${deviceId}</strong> <span style="color: #64748b; margin: 0 4px;">|</span> 조회 일자: <strong style="color: #fbbf24">${dateStr}</strong></div>` +
+          `<div style="margin-top: 2px; font-size: 0.82rem; color: #cbd5e1;">` +
           `일별 롤업 궤적: <strong style="color: #34d399">총 ${dailyHistoryPoints.length.toLocaleString()}개</strong> 📍 ` +
-          `<span style="color: #64748b; margin: 0 4px;">|</span> 조회 일자: <strong style="color: #fbbf24">${dateStr}</strong> (${sTime} ~ ${eTime})</div>`;
+          `<span style="color: #94a3b8; font-size: 0.78rem;">(${sTime} ~ ${eTime})</span></div>`;
 
         document.getElementById('val-speed').innerText = `총 ${dailyHistoryPoints.length.toLocaleString()}개`;
-        document.getElementById('val-accuracy').innerText = `일별 롤업 (1회 읽기)`;
+        document.getElementById('val-accuracy').innerText = `일별 롤업`;
         document.getElementById('val-last-seen').innerHTML = `<div style="font-size: 0.95rem; font-weight: 700;">${dateStr}</div><div style="font-size: 0.8rem; color: #94a3b8;">${sTime} ~ ${eTime}</div>`;
         if (lastPt.batteryLevel !== undefined) {
           document.getElementById('val-battery').innerText = `${lastPt.batteryLevel}%`;
           document.getElementById('val-battery-bar').style.width = `${lastPt.batteryLevel}%`;
         }
 
-        statusEl.innerHTML = `<span style="color: #34d399"><i class="fa-solid fa-check"></i> ${dateStr} 경로 로드 완료! (총 ${dailyHistoryPoints.length.toLocaleString()}개 좌표, 단 1회 읽기 사용)</span>`;
+        statusEl.innerHTML = `<span style="color: #34d399"><i class="fa-solid fa-check"></i> ${dateStr} 로드 (총 ${dailyHistoryPoints.length.toLocaleString()}개 좌표)</span>`;
       } catch (err) {
         console.error("loadDailyHistory error:", err);
         statusEl.innerHTML = `<span style="color: #f87171">조회 오류: ${err.message}</span>`;
@@ -1159,7 +1161,7 @@
       isDailyHistoryMode = false;
       clearHistoryVisuals();
       document.getElementById('btn-return-live').style.display = 'none';
-      document.getElementById('history-status-msg').innerHTML = "조회할 날짜를 선택하면 1개 통합 문서(1회 읽기)로 하루치 전체 경로를 표시합니다.";
+      document.getElementById('history-status-msg').innerHTML = "조회할 날짜를 선택하면 하루치 전체 경로를 표시합니다.";
 
       if (cachedAllPoints.length > 0) {
         pathCoordinates = buildTrackSegments(cachedAllPoints);
@@ -1191,22 +1193,26 @@
       returnToLiveMode();
     });
 
-    // 실시간 수신 시간 포맷팅 함수 (두 줄 표시: 1줄 시간, 2줄 경과시간)
+    // 실시간 수신 시간 포맷팅 함수 (24시간 방식 + 경과시간 1줄 표시로 박스 줄수 간소화)
     let lastRecordedTimestamp = 0;
     function formatLastSeen(ts) {
       if (!ts) return "--";
       const date = new Date(ts);
-      const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      const h = String(date.getHours()).padStart(2, '0');
+      const m = String(date.getMinutes()).padStart(2, '0');
+      const s = String(date.getSeconds()).padStart(2, '0');
+      const timeStr = `${h}:${m}:${s}`;
       const diffSec = Math.max(0, Math.floor((Date.now() - ts) / 1000));
 
       let agoStr = "";
-      if (diffSec < 10) agoStr = "방금 전";
+      if (diffSec < 10) agoStr = "방금";
       else if (diffSec < 60) agoStr = `${diffSec}초 전`;
       else if (diffSec < 3600) agoStr = `${Math.floor(diffSec / 60)}분 전`;
       else agoStr = `${Math.floor(diffSec / 3600)}시간 전`;
 
-      return `<div style="font-size: 1.05rem; font-weight: 700; line-height: 1.2;">${timeStr}</div>` +
-             `<div style="font-size: 0.8rem; color: #94a3b8; font-weight: 500; margin-top: 3px;">(${agoStr})</div>`;
+      return `<div style="display: flex; align-items: baseline; gap: 4px; white-space: nowrap; overflow: hidden;">` +
+             `<span style="font-size: 0.95rem; font-weight: 700; line-height: 1.2;">${timeStr}</span>` +
+             `<span style="font-size: 0.75rem; color: #94a3b8; font-weight: normal;">(${agoStr})</span></div>`;
     }
 
     // 1초마다 '방금 전 / N초 전' 상대 시간을 부드럽게 갱신
@@ -1373,8 +1379,8 @@
           setOnlineStatus(true, "실시간 수신 중 🟢");
           const devLabel = deviceName ? ` <span style="color: #94a3b8; font-size: 0.8rem; font-weight: normal;">(${deviceName})</span>` : "";
 
-          // 최근 GPS 포인트들 간격 계산
-          let intervalText = "이동 5초 / 정지 60초 (스마트 절전)";
+          // 최근 GPS 포인트들 간격 계산 (약 및 설명 제거하여 모바일 한 줄 유지)
+          let intervalText = "5초";
           if (cachedAllPoints.length >= 2) {
             const sample = cachedAllPoints.slice(-10);
             const diffs = [];
@@ -1386,18 +1392,18 @@
             }
             if (diffs.length > 0) {
               const avg = Math.round(diffs.reduce((a, b) => a + b, 0) / diffs.length);
-              intervalText = `약 ${avg}초 (이동 5초 / 정지 60초)`;
+              intervalText = `${avg}초`;
             }
           }
 
           document.getElementById('device-state-tag').innerHTML = 
             `<div>추적 대상: <strong style="color: #60a5fa">${deviceId}</strong>${devLabel}</div>` +
-            `<div style="margin-top: 4px; font-size: 0.82rem; color: #cbd5e1;">수신 궤적: <strong style="color: #34d399">총 ${cachedAllPoints.length}개</strong> 📍 <span style="color: #64748b; margin: 0 4px;">|</span> 데이터 간격: <strong style="color: #fbbf24">${intervalText}</strong></div>`;
+            `<div style="margin-top: 2px; font-size: 0.82rem; color: #cbd5e1;">수신 궤적: <strong style="color: #34d399">총 ${cachedAllPoints.length}개</strong> 📍 <span style="color: #64748b; margin: 0 4px;">|</span> 간격: <strong style="color: #fbbf24">${intervalText}</strong></div>`;
         } else {
           const devLabel = deviceName ? ` <span style="color: #94a3b8; font-size: 0.8rem; font-weight: normal;">(${deviceName})</span>` : "";
           document.getElementById('device-state-tag').innerHTML = 
             `<div>추적 대상: <strong style="color: #60a5fa">${deviceId}</strong>${devLabel}</div>` +
-            `<div style="margin-top: 4px; font-size: 0.82rem; color: #94a3b8;">GPS 데이터 대기 중... <span style="color: #64748b; margin: 0 4px;">|</span> 데이터 간격: <strong style="color: #fbbf24">이동 5초 / 정지 60초 (스마트 절전)</strong></div>`;
+            `<div style="margin-top: 2px; font-size: 0.82rem; color: #94a3b8;">GPS 데이터 대기 중... <span style="color: #64748b; margin: 0 4px;">|</span> 간격: <strong style="color: #fbbf24">5초</strong></div>`;
         }
 
         // 배터리 및 마지막 수신 시간 단일 업데이트
