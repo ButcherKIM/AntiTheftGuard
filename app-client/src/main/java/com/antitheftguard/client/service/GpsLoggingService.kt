@@ -20,6 +20,7 @@ import com.antitheftguard.client.db.AppDatabase
 import com.antitheftguard.client.db.GpsPointEntity
 import com.antitheftguard.client.location.GpsBatcher
 import com.antitheftguard.client.location.SmartIntervalCalculator
+import com.antitheftguard.client.location.StationaryAnchorManager
 import com.antitheftguard.core.firebase.FirestoreManager
 import com.antitheftguard.core.model.GpsBatch
 import com.antitheftguard.core.model.GpsPoint
@@ -79,6 +80,7 @@ class GpsLoggingService : Service() {
     private lateinit var fusedLocationClient: FusedLocationProviderClient
     private lateinit var locationCallback: LocationCallback
     private lateinit var gpsBatcher: GpsBatcher
+    private val stationaryAnchorManager = StationaryAnchorManager()
     private val firestoreManager = FirestoreManager()
     private var isCharging = false
     private var isMotionActive = true
@@ -95,7 +97,12 @@ class GpsLoggingService : Service() {
                 else -> isCharging
             }
             if (wasCharging != isCharging) {
-                val newConfig = SmartIntervalCalculator.getConfig(currentSpeed, isCharging, isMotionActive)
+                val newConfig = SmartIntervalCalculator.getConfig(
+                    currentSpeed,
+                    isCharging,
+                    isMotionActive,
+                    stationaryAnchorManager.isStationaryConfirmed
+                )
                 if (newConfig != currentConfig) {
                     currentConfig = newConfig
                     updateLocationInterval()
@@ -203,7 +210,7 @@ class GpsLoggingService : Service() {
         }
     }
 
-    private fun sendSingleGpsPoint(location: Location) {
+    private fun sendSingleGpsPoint(location: Location, overridePoint: GpsPoint? = null) {
         val now = System.currentTimeMillis()
         // 2초 이내 동일 위치 중복 발신 방지
         if (now - lastImmediateLocationSentTime < 2000L) {
@@ -222,20 +229,25 @@ class GpsLoggingService : Service() {
         }
 
         serviceScope.launch {
-            val pointTime = if (Math.abs(now - location.time) < 60_000L && location.time > 0) {
-                location.time
+            val point = if (overridePoint != null) {
+                overridePoint
             } else {
-                now
+                val pointTime = if (Math.abs(now - location.time) < 60_000L && location.time > 0) {
+                    location.time
+                } else {
+                    now
+                }
+                val battery = getBatteryLevel()
+                val rawPoint = GpsPoint(
+                    latitude = location.latitude,
+                    longitude = location.longitude,
+                    accuracy = location.accuracy,
+                    speed = location.speed,
+                    timestamp = pointTime,
+                    batteryLevel = battery
+                )
+                stationaryAnchorManager.processPoint(rawPoint, isMotionActive).refinedPoint
             }
-            val battery = getBatteryLevel()
-            val point = GpsPoint(
-                latitude = location.latitude,
-                longitude = location.longitude,
-                accuracy = location.accuracy,
-                speed = location.speed,
-                timestamp = pointTime,
-                batteryLevel = battery
-            )
 
             // 1) Room DB 캐시
             val entity = GpsPointEntity(
@@ -274,7 +286,7 @@ class GpsLoggingService : Service() {
                 for (location in result.locations) {
                     currentSpeed = location.speed
                     val batteryLevel = getBatteryLevel()
-                    val point = GpsPoint(
+                    val rawPoint = GpsPoint(
                         latitude = location.latitude,
                         longitude = location.longitude,
                         accuracy = location.accuracy,
@@ -283,30 +295,48 @@ class GpsLoggingService : Service() {
                         batteryLevel = batteryLevel
                     )
 
+                    // 정지 앵커 수렴 및 실내 드리프트 보정
+                    val processResult = stationaryAnchorManager.processPoint(rawPoint, isMotionActive)
+                    val processedPoint = processResult.refinedPoint
+
+                    if (processResult.isStationary) {
+                        // 정지 앵커 좌표로 버퍼 내 대기 중인 이전 정지 포인트들도 소급 개선
+                        gpsBatcher.updateStationaryBuffer(
+                            anchorLat = processedPoint.latitude,
+                            anchorLng = processedPoint.longitude,
+                            anchorAcc = processedPoint.accuracy
+                        )
+                    }
+
                     // 서비스 시작 직후 아직 즉시 발신이 수행되지 않았다면 첫 콜백 픽스를 즉시 단독 발신
                     if (!isFirstCallbackLocationSent && (System.currentTimeMillis() - lastImmediateLocationSentTime > 3000L)) {
                         isFirstCallbackLocationSent = true
-                        Log.d(TAG, "첫 번째 GPS 콜백 픽스 즉시 발신: lat=${point.latitude}, lng=${point.longitude}")
-                        sendSingleGpsPoint(location)
+                        Log.d(TAG, "첫 번째 GPS 콜백 픽스 즉시 발신: lat=${processedPoint.latitude}, lng=${processedPoint.longitude}")
+                        sendSingleGpsPoint(location, processedPoint)
                     } else {
-                        gpsBatcher.addPoint(point)
+                        gpsBatcher.addPoint(processedPoint)
                     }
                     
                     // Room에도 개별 저장 (오프라인 캐시)
                     serviceScope.launch {
                         val entity = GpsPointEntity(
-                            lat = point.latitude,
-                            lng = point.longitude,
-                            accuracy = point.accuracy,
-                            speed = point.speed,
-                            timestamp = point.timestamp,
-                            batteryLevel = point.batteryLevel
+                            lat = processedPoint.latitude,
+                            lng = processedPoint.longitude,
+                            accuracy = processedPoint.accuracy,
+                            speed = processedPoint.speed,
+                            timestamp = processedPoint.timestamp,
+                            batteryLevel = processedPoint.batteryLevel
                         )
                         AppDatabase.getInstance(this@GpsLoggingService).gpsPointDao().insert(entity)
                     }
                 }
                 // 속도 및 이동 상태 변화에 따른 인터벌/우선순위/거리 필터 조정
-                val newConfig = SmartIntervalCalculator.getConfig(currentSpeed, isCharging, isMotionActive)
+                val newConfig = SmartIntervalCalculator.getConfig(
+                    currentSpeed,
+                    isCharging,
+                    isMotionActive,
+                    stationaryAnchorManager.isStationaryConfirmed
+                )
                 if (newConfig != currentConfig) {
                     Log.d(TAG, "위치 수집 모드 전환: $currentConfig -> $newConfig")
                     currentConfig = newConfig
@@ -324,7 +354,12 @@ class GpsLoggingService : Service() {
             return
         }
         
-        currentConfig = SmartIntervalCalculator.getConfig(currentSpeed, isCharging, isMotionActive)
+        currentConfig = SmartIntervalCalculator.getConfig(
+            currentSpeed,
+            isCharging,
+            isMotionActive,
+            stationaryAnchorManager.isStationaryConfirmed
+        )
         val request = LocationRequest.Builder(currentConfig.priority, currentConfig.interval)
             .setMinUpdateIntervalMillis(currentConfig.interval / 2)
             .setMaxUpdateDelayMillis(currentConfig.interval * 2)
@@ -527,7 +562,13 @@ class GpsLoggingService : Service() {
             if (isMotionActive != moving) {
                 Log.d(TAG, "하드웨어 모션 상태 변경: isMotionActive=$isMotionActive -> $moving")
                 isMotionActive = moving
-                val newConfig = SmartIntervalCalculator.getConfig(currentSpeed, isCharging, isMotionActive)
+                stationaryAnchorManager.updateMotionState(moving)
+                val newConfig = SmartIntervalCalculator.getConfig(
+                    currentSpeed,
+                    isCharging,
+                    isMotionActive,
+                    stationaryAnchorManager.isStationaryConfirmed
+                )
                 if (newConfig != currentConfig) {
                     Log.d(TAG, "모션 전환에 따른 위치 수집 모드 변경: $currentConfig -> $newConfig")
                     currentConfig = newConfig

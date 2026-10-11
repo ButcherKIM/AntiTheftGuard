@@ -50,4 +50,40 @@ class GpsBatcherTest {
         assertEquals(5, batches[0].points.size)
         job.cancel()
     }
+
+    @Test
+    fun `updateStationaryBuffer 호출 시 버퍼 내 정지 포인트들의 좌표가 수렴 앵커 좌표로 소급 개선된다`() = runTest {
+        val batcher = GpsBatcher("test_device")
+        val batches = mutableListOf<GpsBatch>()
+        
+        val job = launch(UnconfinedTestDispatcher()) {
+            batcher.batchFlow.collect {
+                batches.add(it)
+            }
+        }
+        
+        // 4개의 정지 포인트 추가 (약간의 GPS jitter가 있는 상태)
+        for (i in 1..4) {
+            batcher.addPoint(GpsPoint(37.5000 + i * 0.0001, 127.0000, 15f, 0.0f, System.currentTimeMillis() + i * 1000, 100))
+        }
+
+        // 앵커가 수렴되어 버퍼 내 이전 포인트들을 개선
+        val convergedLat = 37.50025
+        val convergedLng = 127.00010
+        val convergedAcc = 4.5f
+        batcher.updateStationaryBuffer(convergedLat, convergedLng, convergedAcc)
+
+        // 5번째 포인트 추가로 배치 방출 트리거
+        batcher.addPoint(GpsPoint(convergedLat, convergedLng, convergedAcc, 0.0f, System.currentTimeMillis() + 5000, 100))
+
+        assertEquals(1, batches.size)
+        assertEquals(5, batches[0].points.size)
+        // 버퍼에 대기 중이던 1~4번째 포인트가 모두 개선된 앵커 좌표로 갱신되었는지 검증
+        for (i in 0..3) {
+            assertEquals(convergedLat, batches[0].points[i].latitude, 0.000001)
+            assertEquals(convergedLng, batches[0].points[i].longitude, 0.000001)
+            assertEquals(convergedAcc, batches[0].points[i].accuracy, 0.01f)
+        }
+        job.cancel()
+    }
 }

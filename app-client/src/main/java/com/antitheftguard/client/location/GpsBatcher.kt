@@ -30,4 +30,22 @@ class GpsBatcher(private val deviceId: String) {
             batchStartTime.set(now)
         }
     }
+
+    /**
+     * 버퍼 내에 아직 발신되지 않고 대기 중인 정지 포인트(속도 0)들을
+     * 최신 수렴된 앵커 좌표 및 오차로 소급 개선(Refinement)합니다.
+     */
+    @Synchronized
+    fun updateStationaryBuffer(anchorLat: Double, anchorLng: Double, anchorAcc: Float) {
+        for (i in buffer.indices) {
+            val p = buffer[i]
+            if (p.speed == 0f) {
+                buffer[i] = p.copy(
+                    latitude = anchorLat,
+                    longitude = anchorLng,
+                    accuracy = anchorAcc
+                )
+            }
+        }
+    }
 }
