@@ -9,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.location.Location
 import android.os.BatteryManager
 import android.os.IBinder
 import android.os.Looper
@@ -20,6 +21,7 @@ import com.antitheftguard.client.db.GpsPointEntity
 import com.antitheftguard.client.location.GpsBatcher
 import com.antitheftguard.client.location.SmartIntervalCalculator
 import com.antitheftguard.core.firebase.FirestoreManager
+import com.antitheftguard.core.model.GpsBatch
 import com.antitheftguard.core.model.GpsPoint
 import com.google.android.gms.location.*
 import android.app.Notification
@@ -41,9 +43,12 @@ class GpsLoggingService : Service() {
         private const val NOTIFICATION_ID = 1
         const val CHANNEL_ID = "gps_tracking_stealth_v4"
         const val ACTION_MOTION_STATE_CHANGED = "com.antitheftguard.client.ACTION_MOTION_STATE_CHANGED"
+        const val ACTION_SEND_IMMEDIATE_GPS = "com.antitheftguard.client.ACTION_SEND_IMMEDIATE_GPS"
         const val EXTRA_IS_MOVING = "extra_is_moving"
+        const val PREFS_KEY_LAST_GPS_SENT = "last_gps_sent_time"
 
         val isRunningFlow = kotlinx.coroutines.flow.MutableStateFlow(false)
+        val lastGpsSentTimeFlow = kotlinx.coroutines.flow.MutableStateFlow(0L)
 
         @Volatile
         var isRunning: Boolean = false
@@ -51,6 +56,13 @@ class GpsLoggingService : Service() {
                 field = value
                 isRunningFlow.value = value
             }
+
+        fun recordLastGpsSent(context: Context, timestamp: Long) {
+            if (timestamp <= 0L) return
+            context.getSharedPreferences("antitheft", MODE_PRIVATE)
+                .edit().putLong(PREFS_KEY_LAST_GPS_SENT, timestamp).apply()
+            lastGpsSentTimeFlow.value = timestamp
+        }
 
         fun onMotionStateChanged(context: Context, isMoving: Boolean) {
             val intent = Intent(context, GpsLoggingService::class.java).apply {
@@ -123,12 +135,137 @@ class GpsLoggingService : Service() {
         gpsBatcher = GpsBatcher(deviceId)
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
 
+        val savedLastSent = getSharedPreferences("antitheft", MODE_PRIVATE)
+            .getLong(PREFS_KEY_LAST_GPS_SENT, 0L)
+        if (savedLastSent > 0) {
+            lastGpsSentTimeFlow.value = savedLastSent
+        }
+
         setupLocationCallback()
         startLocationUpdates()
         collectBatches()
         registerBatteryReceiver()
         listenForRemoteCommands()
         ActivityTransitionManager.startTracking(this)
+        triggerImmediateLocationSend()
+    }
+
+    private var lastImmediateLocationSentTime: Long = 0L
+    private var isFirstCallbackLocationSent = false
+
+    private fun triggerImmediateLocationSend() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+            != PackageManager.PERMISSION_GRANTED) {
+            Log.w(TAG, "위치 권한 없음 - 즉시 발신 스킵")
+            return
+        }
+
+        Log.d(TAG, "🚨 [즉시 GPS 발신] 위치 조회 시작")
+        isFirstCallbackLocationSent = false
+
+        // 1) FusedLocationProviderClient의 마지막 캐시 위치 즉시 확인
+        try {
+            fusedLocationClient.lastLocation
+                .addOnSuccessListener { loc ->
+                    if (loc != null) {
+                        val now = System.currentTimeMillis()
+                        val age = now - loc.time
+                        Log.d(TAG, "lastLocation 획득 성공: lat=${loc.latitude}, lng=${loc.longitude}, 경과시간=${age}ms")
+                        // 최근 3분 이내 캐시 위치인 경우 즉시 1차 발신
+                        if (age < 180_000L) {
+                            sendSingleGpsPoint(loc)
+                        } else {
+                            Log.d(TAG, "lastLocation이 너무 오래됨 (${age}ms) -> 신규 위치 픽스 대기")
+                        }
+                    }
+                }
+                .addOnFailureListener { e ->
+                    Log.w(TAG, "lastLocation 조회 실패", e)
+                }
+        } catch (e: Exception) {
+            Log.w(TAG, "lastLocation 조회 예외", e)
+        }
+
+        // 2) 신선한 실시간 GPS 위치 즉시 요청 (Priority.PRIORITY_HIGH_ACCURACY)
+        try {
+            fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null)
+                .addOnSuccessListener { freshLoc ->
+                    if (freshLoc != null) {
+                        Log.d(TAG, "getCurrentLocation 획득 성공: lat=${freshLoc.latitude}, lng=${freshLoc.longitude}")
+                        sendSingleGpsPoint(freshLoc)
+                    }
+                }
+                .addOnFailureListener { e ->
+                    Log.w(TAG, "getCurrentLocation 호출 실패", e)
+                }
+        } catch (e: Exception) {
+            Log.w(TAG, "getCurrentLocation 예외 발생", e)
+        }
+    }
+
+    private fun sendSingleGpsPoint(location: Location) {
+        val now = System.currentTimeMillis()
+        // 2초 이내 동일 위치 중복 발신 방지
+        if (now - lastImmediateLocationSentTime < 2000L) {
+            Log.d(TAG, "단시간 중복 발신 방지 (최근 발신 후 ${now - lastImmediateLocationSentTime}ms 경과)")
+            return
+        }
+        lastImmediateLocationSentTime = now
+
+        if (deviceId.isEmpty()) {
+            val prefs = getSharedPreferences("antitheft", MODE_PRIVATE)
+            deviceId = prefs.getString("device_id", "") ?: ""
+            if (deviceId.isEmpty()) {
+                val sanitizedModel = Build.MODEL.replace("[^a-zA-Z0-9_-]".toRegex(), "_").lowercase()
+                deviceId = "phone_${sanitizedModel}"
+            }
+        }
+
+        serviceScope.launch {
+            val pointTime = if (Math.abs(now - location.time) < 60_000L && location.time > 0) {
+                location.time
+            } else {
+                now
+            }
+            val battery = getBatteryLevel()
+            val point = GpsPoint(
+                latitude = location.latitude,
+                longitude = location.longitude,
+                accuracy = location.accuracy,
+                speed = location.speed,
+                timestamp = pointTime,
+                batteryLevel = battery
+            )
+
+            // 1) Room DB 캐시
+            val entity = GpsPointEntity(
+                lat = point.latitude,
+                lng = point.longitude,
+                accuracy = point.accuracy,
+                speed = point.speed,
+                timestamp = point.timestamp,
+                batteryLevel = point.batteryLevel
+            )
+            AppDatabase.getInstance(this@GpsLoggingService).gpsPointDao().insert(entity)
+
+            // 2) Firestore 단일 포인트 즉시 배치 업로드
+            val batch = GpsBatch(
+                deviceId = deviceId,
+                startTime = point.timestamp,
+                endTime = point.timestamp,
+                points = listOf(point)
+            )
+
+            firestoreManager.saveGpsBatch(deviceId, batch)
+                .onSuccess {
+                    Log.d(TAG, "즉시 GPS 배치 발신 성공! lat=${point.latitude}, lng=${point.longitude}, time=${point.timestamp}")
+                    firestoreManager.updateDeviceStatus(deviceId, point.timestamp, point.batteryLevel)
+                    recordLastGpsSent(this@GpsLoggingService, point.timestamp)
+                }
+                .onFailure { e ->
+                    Log.e(TAG, "즉시 GPS 배치 발신 실패", e)
+                }
+        }
     }
 
     private fun setupLocationCallback() {
@@ -145,7 +282,15 @@ class GpsLoggingService : Service() {
                         timestamp = location.time,
                         batteryLevel = batteryLevel
                     )
-                    gpsBatcher.addPoint(point)
+
+                    // 서비스 시작 직후 아직 즉시 발신이 수행되지 않았다면 첫 콜백 픽스를 즉시 단독 발신
+                    if (!isFirstCallbackLocationSent && (System.currentTimeMillis() - lastImmediateLocationSentTime > 3000L)) {
+                        isFirstCallbackLocationSent = true
+                        Log.d(TAG, "첫 번째 GPS 콜백 픽스 즉시 발신: lat=${point.latitude}, lng=${point.longitude}")
+                        sendSingleGpsPoint(location)
+                    } else {
+                        gpsBatcher.addPoint(point)
+                    }
                     
                     // Room에도 개별 저장 (오프라인 캐시)
                     serviceScope.launch {
@@ -210,6 +355,7 @@ class GpsLoggingService : Service() {
                         val currentBattery = lastPoint?.batteryLevel ?: getBatteryLevel()
                         val lastTime = lastPoint?.timestamp ?: batch.endTime
                         firestoreManager.updateDeviceStatus(deviceId, lastTime, currentBattery)
+                        recordLastGpsSent(this@GpsLoggingService, lastTime)
                     }
                     .onFailure { e ->
                         Log.e(TAG, "배치 업로드 실패, 오프라인 캐시에 보관", e)
@@ -372,6 +518,10 @@ class GpsLoggingService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_SEND_IMMEDIATE_GPS) {
+            triggerImmediateLocationSend()
+        }
+
         if (intent?.action == ACTION_MOTION_STATE_CHANGED) {
             val moving = intent.getBooleanExtra(EXTRA_IS_MOVING, true)
             if (isMotionActive != moving) {

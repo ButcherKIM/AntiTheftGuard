@@ -28,6 +28,9 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.work.*
 import com.antitheftguard.client.worker.DailyRollupWorker
 import java.util.concurrent.TimeUnit
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -40,6 +43,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private val firestoreManager = FirestoreManager()
     private val scope = CoroutineScope(Dispatchers.Main)
+    private val timeFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.KOREA)
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -67,6 +71,7 @@ class MainActivity : AppCompatActivity() {
         updateBatteryInfo()
         updatePermissionStatus()
         updateServiceStatusUi()
+        updateLastGpsSentUi(0L)
         observeServiceStatus()
         setupWorkers()
     }
@@ -80,6 +85,7 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         updateBatteryInfo()
         updatePermissionStatus()
+        updateLastGpsSentUi(0L)
         
         // 이전에 추적을 켜두었는데 서비스가 종료되었던 상태라면 자동 재개
         val shouldRun = getSharedPreferences("antitheft", Context.MODE_PRIVATE)
@@ -103,10 +109,35 @@ class MainActivity : AppCompatActivity() {
     private fun observeServiceStatus() {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                GpsLoggingService.isRunningFlow.collect {
-                    updateServiceStatusUi()
+                launch {
+                    GpsLoggingService.isRunningFlow.collect {
+                        updateServiceStatusUi()
+                    }
+                }
+                launch {
+                    GpsLoggingService.lastGpsSentTimeFlow.collect { time ->
+                        updateLastGpsSentUi(time)
+                    }
                 }
             }
+        }
+    }
+
+    private fun updateLastGpsSentUi(timestamp: Long) {
+        val effectiveTime = if (timestamp > 0) {
+            timestamp
+        } else {
+            getSharedPreferences("antitheft", Context.MODE_PRIVATE)
+                .getLong(GpsLoggingService.PREFS_KEY_LAST_GPS_SENT, 0L)
+        }
+
+        if (effectiveTime > 0) {
+            val formatted = timeFormat.format(Date(effectiveTime))
+            binding.tvLastGpsSent.text = "마지막 GPS 발신: $formatted"
+            binding.tvLastGpsSent.setTextColor(0xFF38BDF8.toInt())
+        } else {
+            binding.tvLastGpsSent.text = "마지막 GPS 발신: 기록 없음 (미발신)"
+            binding.tvLastGpsSent.setTextColor(0xFF94A3B8.toInt())
         }
     }
 
@@ -267,9 +298,13 @@ class MainActivity : AppCompatActivity() {
 
             prefs.edit().putBoolean("is_service_running", true).apply()
             GpsLoggingService.isRunning = true
+            binding.tvLastGpsSent.text = "마지막 GPS 발신: 즉시 발신 요청 중... 📡"
+            binding.tvLastGpsSent.setTextColor(0xFF38BDF8.toInt())
+
+            serviceIntent.action = GpsLoggingService.ACTION_SEND_IMMEDIATE_GPS
             ContextCompat.startForegroundService(this, serviceIntent)
             updateServiceStatusUi()
-            Toast.makeText(this, "도난 방지 추적이 시작되었습니다.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "도난 방지 추적이 시작되었습니다 (즉시 위치 발신).", Toast.LENGTH_SHORT).show()
         } else {
             // 중지
             stopService(serviceIntent)

@@ -148,6 +148,15 @@
                     android:layout_marginBottom="8dp" />
 
                 <TextView
+                    android:id="@+id/tvLastGpsSent"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="마지막 GPS 발신: 기록 없음 (미발신)"
+                    android:textColor="#CBD5E1"
+                    android:textSize="14sp"
+                    android:layout_marginBottom="8dp" />
+
+                <TextView
                     android:id="@+id/tvBatteryStatus"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
