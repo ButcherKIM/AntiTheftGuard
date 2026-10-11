@@ -269,6 +269,7 @@
 
     input, select {
       flex: 1;
+      min-width: 0;
       background: var(--bg-dark);
       border: 1px solid var(--border);
       color: var(--text-main);
@@ -613,15 +614,28 @@
       
       <!-- Device Selector -->
       <div class="sidebar-section">
-        <div class="section-title"><i class="fa-solid fa-mobile-screen"></i> 추적 기기 선택</div>
-        <div class="device-box">
+        <div class="section-title" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+          <span><i class="fa-solid fa-mobile-screen"></i> 추적 기기 선택</span>
+          <span id="header-device-info" style="font-size: 0.84rem; font-weight: normal; color: #94a3b8; text-transform: none; letter-spacing: normal;"></span>
+        </div>
+        <div class="device-box" style="position: relative;">
           <div class="input-group">
             <input type="text" id="target-device-id" list="device-history-list" placeholder="기기 ID (예: kmk 또는 phone_sm-s938n)" />
             <datalist id="device-history-list"></datalist>
-            <button class="map-btn" id="btn-connect-device"><i class="fa-solid fa-link"></i> 연결</button>
+            <button class="map-btn" id="btn-connect-device" style="white-space: nowrap;"><i class="fa-solid fa-link"></i> 연결</button>
+            <button class="map-btn" id="btn-toggle-device-list" type="button" title="등록된 기기 목록" style="padding: 10px 12px; justify-content: center; flex-shrink: 0;">
+              <i class="fa-solid fa-chevron-down" id="icon-device-dropdown" style="transition: transform 0.2s ease;"></i>
+            </button>
           </div>
-          <div id="device-quick-pills" style="display: flex; gap: 6px; flex-wrap: wrap; margin-top: 2px;"></div>
-          <div id="device-state-tag" style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.4;">
+          <!-- 드롭다운 기기 목록 (평상시 숨김) -->
+          <div id="device-dropdown-container" style="display: none; background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 10px; margin-top: 4px; box-shadow: 0 6px 16px rgba(0,0,0,0.4); max-height: 220px; overflow-y: auto;">
+            <div style="font-size: 0.76rem; color: #94a3b8; font-weight: 600; margin-bottom: 8px; padding: 0 2px; display: flex; justify-content: space-between; align-items: center;">
+              <span><i class="fa-solid fa-layer-group"></i> 등록된 기기 목록</span>
+              <span style="font-size: 0.7rem; color: #64748b;">선택 시 즉시 연결</span>
+            </div>
+            <div id="device-quick-pills" style="display: flex; flex-direction: column; gap: 6px;"></div>
+          </div>
+          <div id="device-state-tag" style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.4; margin-top: 2px;">
             기기 검색 및 실시간 상태 동기화 중...
           </div>
         </div>
@@ -928,6 +942,46 @@
     // --- 3. Telemetry & Device Observer (REST API Auto-Polling) ---
     let currentDeviceId = "";
     let syncIntervalId = null;
+    let knownDeviceNames = {};
+
+    function updateHeaderDeviceInfo(devId, devName) {
+      const el = document.getElementById('header-device-info');
+      if (!el) return;
+      if (!devId) {
+        el.innerHTML = '';
+        return;
+      }
+      const name = devName !== undefined ? devName : (knownDeviceNames[devId] || '');
+      if (name && name !== devId) {
+        el.innerHTML = `<strong style="color: #60a5fa">${devId}</strong> <span style="color: #94a3b8; font-size: 0.78rem;">(${name})</span>`;
+      } else {
+        el.innerHTML = `<strong style="color: #60a5fa">${devId}</strong>`;
+      }
+    }
+
+    function toggleDeviceDropdown() {
+      const container = document.getElementById('device-dropdown-container');
+      if (!container) return;
+      if (container.style.display === 'none' || !container.style.display) {
+        openDeviceDropdown();
+      } else {
+        closeDeviceDropdown();
+      }
+    }
+
+    function openDeviceDropdown() {
+      const container = document.getElementById('device-dropdown-container');
+      const icon = document.getElementById('icon-device-dropdown');
+      if (container) container.style.display = 'block';
+      if (icon) icon.style.transform = 'rotate(180deg)';
+    }
+
+    function closeDeviceDropdown() {
+      const container = document.getElementById('device-dropdown-container');
+      const icon = document.getElementById('icon-device-dropdown');
+      if (container) container.style.display = 'none';
+      if (icon) icon.style.transform = 'rotate(0deg)';
+    }
 
     let lastKnownSeen = 0;
     let isInitialHistoryLoaded = false;
@@ -953,6 +1007,12 @@
           // 가장 최근에 활동한(lastSeen) 기기 순으로 정렬!
           parsedDevices.sort((a, b) => (b.lastSeen || 0) - (a.lastSeen || 0));
 
+          parsedDevices.forEach(d => {
+            if (d.deviceId) {
+              knownDeviceNames[d.deviceId] = d.deviceName || '';
+            }
+          });
+
           // 1) datalist 자동 완성 채우기
           const dataList = document.getElementById('device-history-list');
           if (dataList) {
@@ -961,13 +1021,17 @@
             ).join('');
           }
 
-          // 2) 원터치 기기 선택 Pills 렌더링
+          // 2) 드롭다운 기기 목록 렌더링
           const pillsContainer = document.getElementById('device-quick-pills');
           if (pillsContainer) {
             pillsContainer.innerHTML = parsedDevices.map(d => {
               const label = d.deviceId;
+              const devNameText = (d.deviceName && d.deviceName !== d.deviceId) ? ` <span style="font-size: 0.76rem; color: #94a3b8; font-weight: normal;">(${d.deviceName})</span>` : '';
               const isSelected = d.deviceId === currentDeviceId;
-              return `<button type="button" class="quick-device-pill" onclick="selectQuickDevice('${d.deviceId}')" style="padding: 4px 10px; font-size: 0.78rem; background: ${isSelected ? 'rgba(59, 130, 246, 0.25)' : 'var(--bg-card)'}; border: 1px solid ${isSelected ? 'var(--primary)' : 'var(--border)'}; color: ${isSelected ? '#60a5fa' : '#94a3b8'}; border-radius: 9999px; cursor: pointer; display: flex; align-items: center; gap: 5px; font-weight: 600;"><i class="fa-solid fa-mobile-screen"></i> ${label}</button>`;
+              return `<button type="button" class="quick-device-pill" data-device-id="${d.deviceId}" onclick="selectQuickDevice('${d.deviceId}')" style="width: 100%; text-align: left; padding: 8px 10px; font-size: 0.82rem; background: ${isSelected ? 'rgba(59, 130, 246, 0.2)' : 'var(--bg-dark)'}; border: 1px solid ${isSelected ? 'var(--primary)' : 'var(--border)'}; color: ${isSelected ? '#60a5fa' : 'var(--text-main)'}; border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 8px; font-weight: 600; transition: all 0.15s ease;">` +
+                `<span style="display: flex; align-items: center; gap: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"><i class="fa-solid fa-mobile-screen" style="color: ${isSelected ? 'var(--primary)' : '#94a3b8'};"></i> <span>${label}${devNameText}</span></span>` +
+                `<i class="fa-solid fa-check pill-check-icon" style="color: #3b82f6; font-size: 0.8rem; display: ${isSelected ? 'inline-block' : 'none'};"></i>` +
+              `</button>`;
             }).join('');
           }
 
@@ -978,11 +1042,16 @@
 
           document.getElementById('target-device-id').value = selected.deviceId;
           setOnlineStatus(true, "Firebase 정상 연결됨");
+          updateHeaderDeviceInfo(selected.deviceId, selected.deviceName);
           connectDevice(selected.deviceId);
         } else {
           setOnlineStatus(true, "기기 대기 중 (기록 없음)");
           document.getElementById('device-state-tag').innerHTML = 
             `등록된 기기가 없습니다. 앱에서 [🚨 GPS 도난 방지 추적 시작] 버튼을 눌러주세요.`;
+          const pillsContainer = document.getElementById('device-quick-pills');
+          if (pillsContainer) {
+            pillsContainer.innerHTML = '<div style="font-size: 0.8rem; color: #94a3b8; padding: 6px;">등록된 기기가 없습니다.</div>';
+          }
         }
       } catch (err) {
         console.error("Device fetch error:", err);
@@ -999,11 +1068,25 @@
     function selectQuickDevice(devId) {
       document.getElementById('target-device-id').value = devId;
       connectDevice(devId);
+      closeDeviceDropdown();
     }
 
     document.getElementById('btn-connect-device').addEventListener('click', () => {
       const devId = document.getElementById('target-device-id').value.trim();
       if (devId) connectDevice(devId);
+    });
+
+    document.getElementById('btn-toggle-device-list').addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleDeviceDropdown();
+    });
+
+    document.addEventListener('click', (e) => {
+      const container = document.getElementById('device-dropdown-container');
+      const btn = document.getElementById('btn-toggle-device-list');
+      if (container && btn && !container.contains(e.target) && !btn.contains(e.target)) {
+        closeDeviceDropdown();
+      }
     });
 
     document.getElementById('target-device-id').addEventListener('keydown', (e) => {
@@ -1029,17 +1112,19 @@
 
       if (syncIntervalId) clearInterval(syncIntervalId);
 
-      // pills 선택 상태 업데이트
+      // 드롭다운 내 항목 선택 상태 업데이트
       document.querySelectorAll('.quick-device-pill').forEach(btn => {
-        const isSel = btn.innerText.includes(deviceId);
-        btn.style.background = isSel ? 'rgba(59, 130, 246, 0.25)' : 'var(--bg-card)';
+        const isSel = btn.getAttribute('data-device-id') === deviceId;
+        btn.style.background = isSel ? 'rgba(59, 130, 246, 0.2)' : 'var(--bg-dark)';
         btn.style.borderColor = isSel ? 'var(--primary)' : 'var(--border)';
-        btn.style.color = isSel ? '#60a5fa' : '#94a3b8';
+        btn.style.color = isSel ? '#60a5fa' : 'var(--text-main)';
+        const checkIcon = btn.querySelector('.pill-check-icon');
+        if (checkIcon) checkIcon.style.display = isSel ? 'inline-block' : 'none';
       });
 
+      updateHeaderDeviceInfo(deviceId);
       document.getElementById('device-state-tag').innerHTML = 
-        `<div>추적 대상: <strong style="color: #60a5fa">${deviceId}</strong></div>` +
-        `<div style="margin-top: 4px; font-size: 0.82rem; color: #94a3b8;">데이터 동기화 중...</div>`;
+        `<span style="color: #94a3b8;">데이터 동기화 중...</span>`;
 
       // 즉시 최초 동기화 실행 후, 8초마다 스마트 델타 폴링 (쿼터 99% 절약)
       syncDeviceData(deviceId);
@@ -1190,14 +1275,12 @@
           map.fitBounds(L.latLngBounds(dailyHistoryPoints.map(p => [p.latitude, p.longitude])), { padding: [40, 40] });
         }
 
-        // 텔레메트리 및 상/하단 바 갱신 (줄수 감소: 조회일자를 추적대상 옆으로, 궤적수 한줄 배치)
+        // 텔레메트리 및 상/하단 바 갱신 (일별 조회 1줄 단일화: 조회 : YYYY-MM-DD, 📍 개수 (시작 ~ 종료))
         const yymmdd = dateStr.replace(/-/g, '').slice(2);
         setOnlineStatus(true, yymmdd);
+        updateHeaderDeviceInfo(deviceId);
         document.getElementById('device-state-tag').innerHTML = 
-          `<div>추적 대상: <strong style="color: #60a5fa">${deviceId}</strong> <span style="color: #64748b; margin: 0 4px;">|</span> 조회 일자: <strong style="color: #fbbf24">${dateStr}</strong></div>` +
-          `<div style="margin-top: 2px; font-size: 0.82rem; color: #cbd5e1;">` +
-          `일별 롤업 궤적: <strong style="color: #34d399">총 ${dailyHistoryPoints.length.toLocaleString()}개</strong> 📍 ` +
-          `<span style="color: #94a3b8; font-size: 0.78rem;">(${sTime} ~ ${eTime})</span></div>`;
+          `조회 : <strong style="color: #fbbf24">${dateStr}</strong>,  📍 <strong style="color: #34d399">${dailyHistoryPoints.length.toLocaleString()}개</strong> <span style="color: #94a3b8; font-size: 0.8rem;">(${sTime} ~ ${eTime})</span>`;
 
         document.getElementById('val-speed').innerText = `총 ${dailyHistoryPoints.length.toLocaleString()}개`;
         document.getElementById('val-accuracy').innerText = `일별 롤업`;
@@ -1233,6 +1316,11 @@
         if (cachedAllPoints.length > 1) {
           map.fitBounds(L.latLngBounds(cachedAllPoints.map(p => [p.latitude, p.longitude])), { padding: [40, 40] });
         }
+        document.getElementById('device-state-tag').innerHTML = 
+          `수신 궤적: <strong style="color: #34d399">총 ${cachedAllPoints.length.toLocaleString()}개</strong> 📍 <span style="color: #64748b; margin: 0 4px;">|</span> 간격: <strong style="color: #fbbf24">이동 5초/정지 180초</strong>`;
+      } else {
+        document.getElementById('device-state-tag').innerHTML = 
+          `<span style="color: #94a3b8;">GPS 데이터 대기 중...</span> <span style="color: #64748b; margin: 0 4px;">|</span> 간격: <strong style="color: #fbbf24">이동 5초/정지 180초</strong>`;
       }
       if (currentDeviceId) {
         syncDeviceData(currentDeviceId);
@@ -1313,6 +1401,11 @@
         } catch (e) {
           console.warn("Device metadata fetch error:", e);
         }
+
+        if (deviceName) {
+          knownDeviceNames[deviceId] = deviceName;
+        }
+        updateHeaderDeviceInfo(deviceId, deviceName);
 
         // 2) GPS 궤적 및 최근 위치 수신 (스마트 델타 동기화)
         // 최초 1회: 최근 50개 배치 조회하여 맵에 과거 궤적 복원
@@ -1439,16 +1532,11 @@
           }
 
           setOnlineStatus(true, "실시간");
-          const devLabel = deviceName ? ` <span style="color: #94a3b8; font-size: 0.8rem; font-weight: normal;">(${deviceName})</span>` : "";
-
           document.getElementById('device-state-tag').innerHTML = 
-            `<div>추적 대상: <strong style="color: #60a5fa">${deviceId}</strong>${devLabel}</div>` +
-            `<div style="margin-top: 2px; font-size: 0.82rem; color: #cbd5e1;">수신 궤적: <strong style="color: #34d399">총 ${cachedAllPoints.length}개</strong> 📍 <span style="color: #64748b; margin: 0 4px;">|</span> 간격: <strong style="color: #fbbf24">이동 5초/정지 180초</strong></div>`;
+            `수신 궤적: <strong style="color: #34d399">총 ${cachedAllPoints.length.toLocaleString()}개</strong> 📍 <span style="color: #64748b; margin: 0 4px;">|</span> 간격: <strong style="color: #fbbf24">이동 5초/정지 180초</strong>`;
         } else {
-          const devLabel = deviceName ? ` <span style="color: #94a3b8; font-size: 0.8rem; font-weight: normal;">(${deviceName})</span>` : "";
           document.getElementById('device-state-tag').innerHTML = 
-            `<div>추적 대상: <strong style="color: #60a5fa">${deviceId}</strong>${devLabel}</div>` +
-            `<div style="margin-top: 2px; font-size: 0.82rem; color: #94a3b8;">GPS 데이터 대기 중... <span style="color: #64748b; margin: 0 4px;">|</span> 간격: <strong style="color: #fbbf24">이동 5초/정지 180초</strong></div>`;
+            `<span style="color: #94a3b8;">GPS 데이터 대기 중...</span> <span style="color: #64748b; margin: 0 4px;">|</span> 간격: <strong style="color: #fbbf24">이동 5초/정지 180초</strong>`;
         }
 
         // 배터리 및 마지막 수신 시간 단일 업데이트
