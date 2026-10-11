@@ -58,7 +58,7 @@
     header {
       background: var(--bg-panel);
       border-bottom: 1px solid var(--border);
-      padding: 12px 24px;
+      padding: 10px 14px;
       display: flex;
       justify-content: space-between;
       align-items: center;
@@ -68,7 +68,7 @@
     .brand {
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 10px;
       font-size: 1.25rem;
       font-weight: 800;
       letter-spacing: -0.5px;
@@ -82,20 +82,22 @@
     .header-actions {
       display: flex;
       align-items: center;
-      gap: 16px;
+      gap: 8px;
     }
 
     .status-badge {
       display: flex;
       align-items: center;
-      gap: 8px;
-      font-size: 0.85rem;
-      padding: 6px 14px;
+      gap: 6px;
+      font-size: 0.82rem;
+      padding: 5px 10px;
       border-radius: 9999px;
       background: #064e3b;
       color: #34d399;
       font-weight: 600;
       transition: all 0.3s;
+      white-space: nowrap;
+      flex-shrink: 0;
     }
 
     .status-badge.disconnected {
@@ -521,6 +523,16 @@
 
     /* Responsive (Mobile & Tablet) */
     @media (max-width: 900px) {
+      header {
+        padding: 10px 10px;
+      }
+      .brand {
+        font-size: 1.05rem;
+        gap: 6px;
+      }
+      .brand i {
+        font-size: 1.25rem;
+      }
       body {
         height: auto;
         min-height: 100vh;
@@ -563,7 +575,7 @@
   <header>
     <div class="brand">
       <i class="fa-solid fa-shield-halved"></i>
-      <span>AntiTheft Guard <span style="font-size: 0.8rem; font-weight: 500; color: var(--text-muted);">HOST WEB</span></span>
+      <span>AntiTheft Guard</span>
     </div>
     <div class="header-actions">
       <button id="btn-pwa-install" class="btn-pwa-install" title="웹앱으로 설치하기">
