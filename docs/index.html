@@ -119,13 +119,14 @@
     .btn-pwa-install {
       display: none;
       align-items: center;
-      gap: 6px;
-      font-size: 0.82rem;
-      padding: 6px 14px;
-      border-radius: 9999px;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      padding: 0;
+      border-radius: 8px;
       background: linear-gradient(135deg, #2563eb, #3b82f6);
       color: #ffffff;
-      font-weight: 700;
+      font-size: 0.95rem;
       border: 1px solid rgba(255, 255, 255, 0.2);
       cursor: pointer;
       transition: all 0.2s ease;
@@ -161,15 +162,15 @@
       background: #111827;
     }
 
-    /* Map Overlay Controls */
+    /* Map Overlay Controls - 우측 상단 세로 배치 */
     .map-controls {
       position: absolute;
       top: 16px;
-      left: 16px;
+      right: 16px;
       z-index: 900;
       display: flex;
+      flex-direction: column;
       gap: 8px;
-      flex-wrap: wrap;
     }
 
     .map-btn {
@@ -188,9 +189,40 @@
       transition: all 0.2s;
     }
 
+    .map-btn-icon {
+      width: 38px;
+      height: 38px;
+      padding: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.05rem;
+    }
+
     .map-btn:hover {
       background: var(--bg-card);
       border-color: var(--primary);
+      color: #60a5fa;
+    }
+
+    /* 궤적 지우기 아이콘 대각선 빗금 */
+    .icon-slashed {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 18px;
+      height: 18px;
+    }
+    .icon-slashed::after {
+      content: '';
+      position: absolute;
+      width: 130%;
+      height: 2px;
+      background-color: #ef4444;
+      transform: rotate(-45deg);
+      border-radius: 1px;
+      box-shadow: 0 0 2px rgba(0, 0, 0, 0.8);
     }
 
     /* Right Dashboard Sidebar */
@@ -535,7 +567,7 @@
     </div>
     <div class="header-actions">
       <button id="btn-pwa-install" class="btn-pwa-install" title="웹앱으로 설치하기">
-        <i class="fa-solid fa-download"></i> <span>앱 설치</span>
+        <i class="fa-solid fa-download"></i>
       </button>
       <div id="firebase-status" class="status-badge connecting">
         <span class="status-dot"></span>
@@ -550,9 +582,17 @@
     <div id="map-container">
       <div id="map"></div>
       <div class="map-controls">
-        <button class="map-btn" id="btn-recenter"><i class="fa-solid fa-crosshairs"></i> 내 폰 위치로 이동</button>
-        <button class="map-btn" id="btn-clear-trail"><i class="fa-solid fa-route"></i> 궤적 지우기</button>
-        <button class="map-btn" id="btn-refresh"><i class="fa-solid fa-rotate"></i> 즉시 새로고침</button>
+        <button class="map-btn map-btn-icon" id="btn-recenter" title="내 폰 위치로 이동">
+          <i class="fa-solid fa-crosshairs"></i>
+        </button>
+        <button class="map-btn map-btn-icon" id="btn-clear-trail" title="궤적 지우기">
+          <span class="icon-slashed">
+            <i class="fa-solid fa-route"></i>
+          </span>
+        </button>
+        <button class="map-btn map-btn-icon" id="btn-refresh" title="즉시 새로고침">
+          <i class="fa-solid fa-rotate"></i>
+        </button>
       </div>
     </div>
 
@@ -577,15 +617,18 @@
 
       <!-- Daily History Viewer (일별 통합 히스토리 조회) -->
       <div class="sidebar-section">
-        <div class="section-title"><i class="fa-solid fa-calendar-days"></i> 과거 이동 경로 조회 (일별 롤업)</div>
-        <div style="display: flex; gap: 8px; align-items: center; margin-top: 4px;">
+        <div class="section-title" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <span><i class="fa-solid fa-calendar-days"></i> 과거 이동 경로 조회 (일별 롤업)</span>
+          <button id="btn-history-info" type="button" style="background: none; border: none; color: #94a3b8; cursor: pointer; padding: 2px 6px; font-size: 0.95rem; line-height: 1;" title="안내 보기">
+            <i class="fa-solid fa-circle-info"></i>
+          </button>
+        </div>
+        <div style="display: flex; gap: 8px; align-items: center;">
           <input type="date" id="input-history-date" style="flex: 1; padding: 9px 12px; background: var(--bg-dark); color: var(--text-main); border: 1px solid var(--border); border-radius: 8px; font-size: 0.88rem; outline: none; color-scheme: dark;" />
           <button class="map-btn" id="btn-load-daily-history" style="white-space: nowrap;"><i class="fa-solid fa-magnifying-glass"></i> 조회</button>
-          <button class="map-btn" id="btn-return-live" style="display: none; background: rgba(16, 185, 129, 0.2); border-color: #10b981; color: #34d399; white-space: nowrap;"><i class="fa-solid fa-satellite-dish"></i> 오늘 실시간</button>
+          <button class="map-btn" id="btn-return-live" style="display: none; background: rgba(16, 185, 129, 0.2); border-color: #10b981; color: #34d399; white-space: nowrap;"><i class="fa-solid fa-satellite-dish"></i> 실시간</button>
         </div>
-        <div id="history-status-msg" style="margin-top: 6px; font-size: 0.82rem; color: var(--text-muted); line-height: 1.4;">
-          조회할 날짜를 선택하면 하루치 전체 경로를 표시합니다.
-        </div>
+        <div id="history-status-msg" style="margin-top: 6px; font-size: 0.82rem; color: var(--text-muted); line-height: 1.4; display: none;"></div>
       </div>
 
       <!-- Telemetry Info -->
@@ -1034,6 +1077,7 @@
       }
 
       const statusEl = document.getElementById('history-status-msg');
+      statusEl.style.display = 'block';
       statusEl.innerHTML = `<span style="color: #60a5fa"><i class="fa-solid fa-spinner fa-spin"></i> [${dateStr}] 데이터 불러오는 중...</span>`;
 
       try {
@@ -1135,7 +1179,8 @@
         }
 
         // 텔레메트리 및 상/하단 바 갱신 (줄수 감소: 조회일자를 추적대상 옆으로, 궤적수 한줄 배치)
-        setOnlineStatus(true, `📅 ${dateStr} 일별 롤업`);
+        const yymmdd = dateStr.replace(/-/g, '').slice(2);
+        setOnlineStatus(true, yymmdd);
         document.getElementById('device-state-tag').innerHTML = 
           `<div>추적 대상: <strong style="color: #60a5fa">${deviceId}</strong> <span style="color: #64748b; margin: 0 4px;">|</span> 조회 일자: <strong style="color: #fbbf24">${dateStr}</strong></div>` +
           `<div style="margin-top: 2px; font-size: 0.82rem; color: #cbd5e1;">` +
@@ -1150,9 +1195,11 @@
           document.getElementById('val-battery-bar').style.width = `${lastPt.batteryLevel}%`;
         }
 
+        statusEl.style.display = 'block';
         statusEl.innerHTML = `<span style="color: #34d399"><i class="fa-solid fa-check"></i> ${dateStr} 로드 (총 ${dailyHistoryPoints.length.toLocaleString()}개 좌표)</span>`;
       } catch (err) {
         console.error("loadDailyHistory error:", err);
+        statusEl.style.display = 'block';
         statusEl.innerHTML = `<span style="color: #f87171">조회 오류: ${err.message}</span>`;
       }
     }
@@ -1160,8 +1207,11 @@
     function returnToLiveMode() {
       isDailyHistoryMode = false;
       clearHistoryVisuals();
+      setOnlineStatus(true, "실시간");
       document.getElementById('btn-return-live').style.display = 'none';
-      document.getElementById('history-status-msg').innerHTML = "조회할 날짜를 선택하면 하루치 전체 경로를 표시합니다.";
+      const statusEl = document.getElementById('history-status-msg');
+      statusEl.style.display = 'none';
+      statusEl.innerHTML = "";
 
       if (cachedAllPoints.length > 0) {
         pathCoordinates = buildTrackSegments(cachedAllPoints);
@@ -1376,7 +1426,7 @@
             bestBattery = latest.batteryLevel;
           }
 
-          setOnlineStatus(true, "실시간 수신 중 🟢");
+          setOnlineStatus(true, "실시간");
           const devLabel = deviceName ? ` <span style="color: #94a3b8; font-size: 0.8rem; font-weight: normal;">(${deviceName})</span>` : "";
 
           document.getElementById('device-state-tag').innerHTML = 
@@ -1999,6 +2049,35 @@
       console.log('PWA 설치 완료');
       if (btnPwaInstall) btnPwaInstall.style.display = 'none';
     });
+
+    // History Info Modal Logic
+    const historyInfoModal = document.getElementById('history-info-modal');
+    document.getElementById('btn-history-info')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (historyInfoModal) historyInfoModal.style.display = 'flex';
+    });
+    historyInfoModal?.addEventListener('click', (e) => {
+      if (e.target === historyInfoModal) {
+        historyInfoModal.style.display = 'none';
+      }
+    });
+    document.getElementById('btn-close-history-info')?.addEventListener('click', () => {
+      if (historyInfoModal) historyInfoModal.style.display = 'none';
+    });
   </script>
+
+  <!-- History Info Modal / Popover -->
+  <div id="history-info-modal" style="display: none; position: fixed; inset: 0; z-index: 9999; background: rgba(0, 0, 0, 0.65); backdrop-filter: blur(2px); align-items: center; justify-content: center; padding: 20px;">
+    <div id="history-info-card" style="background: var(--bg-panel); border: 1px solid var(--border); border-radius: 12px; padding: 20px; max-width: 380px; width: 100%; box-shadow: 0 10px 25px rgba(0,0,0,0.5); font-size: 0.88rem; color: #cbd5e1; line-height: 1.55;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; font-weight: 700; color: #f8fafc; font-size: 1rem;">
+        <span><i class="fa-solid fa-circle-info" style="color: #60a5fa; margin-right: 6px;"></i>일별 롤업 경로 안내</span>
+        <button id="btn-close-history-info" style="background: none; border: none; color: #94a3b8; font-size: 1.4rem; cursor: pointer; padding: 0 4px; line-height: 1;">&times;</button>
+      </div>
+      <p style="margin: 0 0 10px 0;">조회할 날짜를 선택하면 기기가 하루 동안 수집한 전체 이동/정지 경로를 단일 통합 문서(1회 읽기)로 가져와 지도에 표시합니다.</p>
+      <div style="background: var(--bg-card); border-radius: 8px; padding: 10px; color: #94a3b8; font-size: 0.8rem; line-height: 1.4;">
+        💡 <strong>팁:</strong> 쿼터를 99.9% 절약하는 최적화 구조로, 어제 이전의 30일치 기록을 1회 읽기만으로 자유롭게 열람할 수 있습니다.
+      </div>
+    </div>
+  </div>
 </body>
 </html>
