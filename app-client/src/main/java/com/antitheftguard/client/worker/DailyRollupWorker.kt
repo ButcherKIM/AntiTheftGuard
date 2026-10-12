@@ -9,6 +9,7 @@ import com.antitheftguard.client.db.AppDatabase
 import com.antitheftguard.core.firebase.FirestoreManager
 import com.antitheftguard.core.model.DailyHistory
 import com.antitheftguard.core.model.GpsPoint
+import com.antitheftguard.client.location.StationaryAnchorManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
@@ -74,7 +75,9 @@ class DailyRollupWorker(
                 if (!isAlreadyDone) {
                     val points = gpsDao.getPointsBetween(startOfDay, endOfDay)
                     if (points.isNotEmpty()) {
-                        val gpsPoints = points.map { entity ->
+                        // 1. 오차가 큰 기지국/NLP 거친 좌표(> 50m) 필터링
+                        val validPoints = points.filter { it.accuracy in 0.1f..50f }
+                        val rawGpsPoints = validPoints.map { entity ->
                             GpsPoint(
                                 latitude = entity.lat,
                                 longitude = entity.lng,
@@ -85,21 +88,44 @@ class DailyRollupWorker(
                             )
                         }
 
-                        val dailyHistory = DailyHistory(
-                            deviceId = deviceId,
-                            date = dateStr,
-                            startTime = gpsPoints.first().timestamp,
-                            endTime = gpsPoints.last().timestamp,
-                            pointCount = gpsPoints.size,
-                            points = gpsPoints
-                        )
+                        // 2. 단발성 V자형 좌표 튐(outlier jump) 제거
+                        val cleanedGpsPoints = mutableListOf<GpsPoint>()
+                        for (idx in rawGpsPoints.indices) {
+                            val curr = rawGpsPoints[idx]
+                            if (idx > 0 && idx < rawGpsPoints.size - 1) {
+                                val prev = rawGpsPoints[idx - 1]
+                                val next = rawGpsPoints[idx + 1]
+                                val dPrev = StationaryAnchorManager.distanceBetweenMeters(prev.latitude, prev.longitude, curr.latitude, curr.longitude)
+                                val dNext = StationaryAnchorManager.distanceBetweenMeters(curr.latitude, curr.longitude, next.latitude, next.longitude)
+                                val dAcross = StationaryAnchorManager.distanceBetweenMeters(prev.latitude, prev.longitude, next.latitude, next.longitude)
 
-                        val saveResult = firestoreManager.saveDailyHistory(dailyHistory)
-                        if (saveResult.isSuccess) {
-                            prefs.edit().putBoolean(prefKey, true).apply()
-                            Log.d(TAG, "일별 통합 롤업 저장 성공: $dateStr (${gpsPoints.size} 포인트)")
+                                // 이전 및 다음과 각각 100m 이상 떨어져 있으나 이전-다음 간격은 50m 이내인 고립 튐 제거
+                                if (dPrev > 100f && dNext > 100f && dAcross < 50f) {
+                                    continue
+                                }
+                            }
+                            cleanedGpsPoints.add(curr)
+                        }
+
+                        if (cleanedGpsPoints.isNotEmpty()) {
+                            val dailyHistory = DailyHistory(
+                                deviceId = deviceId,
+                                date = dateStr,
+                                startTime = cleanedGpsPoints.first().timestamp,
+                                endTime = cleanedGpsPoints.last().timestamp,
+                                pointCount = cleanedGpsPoints.size,
+                                points = cleanedGpsPoints
+                            )
+
+                            val saveResult = firestoreManager.saveDailyHistory(dailyHistory)
+                            if (saveResult.isSuccess) {
+                                prefs.edit().putBoolean(prefKey, true).apply()
+                                Log.d(TAG, "일별 통합 롤업 저장 성공: $dateStr (${cleanedGpsPoints.size} 포인트)")
+                            } else {
+                                Log.w(TAG, "일별 통합 롤업 저장 실패 ($dateStr): ${saveResult.exceptionOrNull()?.message}")
+                            }
                         } else {
-                            Log.w(TAG, "일별 통합 롤업 저장 실패 ($dateStr): ${saveResult.exceptionOrNull()?.message}")
+                            prefs.edit().putBoolean(prefKey, true).apply()
                         }
                     } else {
                         // 해당 날짜에 기록된 포인트가 없다면 완료 처리하여 반복 조회 방지

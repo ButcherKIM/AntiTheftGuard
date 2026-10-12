@@ -34,11 +34,14 @@ class StationaryAnchorManager(
     // 최근 GPS 속도 추적 (최근 3개)
     private val recentSpeeds = mutableListOf<Float>()
 
+    private var consecutiveBreakoutCount = 0
+
     fun updateMotionState(isMotionActive: Boolean) {
         if (isMotionActive) {
             // 하드웨어 모션 센서가 움직임(걸음, 차량 등)을 알리면 정지 확정 해제
             isStationaryConfirmed = false
             currentAnchor = null
+            consecutiveBreakoutCount = 0
         }
     }
 
@@ -55,23 +58,26 @@ class StationaryAnchorManager(
 
         val areRecentSpeedsLow = recentSpeeds.isNotEmpty() && recentSpeeds.all { it < 1.2f }
 
-        // 1. 이중 정지 확정: 모션 센서 STILL(false) + 최근 GPS 속도 모두 안정
+        // 1. 이중 정지 확정: 모션 센서 STILL(false) + 최근 GPS 속도 모두 안정 + 유효한 오차(<= 50m)
         if (!isMotionActive && areRecentSpeedsLow && !isStationaryConfirmed) {
-            isStationaryConfirmed = true
-            currentAnchor = Anchor(
-                latitude = point.latitude,
-                longitude = point.longitude,
-                accuracy = point.accuracy.coerceAtLeast(5f),
-                totalWeight = calculateWeight(point.accuracy),
-                sampleCount = 1,
-                firstTimestamp = point.timestamp,
-                lastTimestamp = point.timestamp
-            )
-            return ProcessResult(
-                refinedPoint = point.copy(speed = 0f),
-                isStationary = true,
-                isBreakout = false
-            )
+            if (point.accuracy <= 50f) {
+                isStationaryConfirmed = true
+                consecutiveBreakoutCount = 0
+                currentAnchor = Anchor(
+                    latitude = point.latitude,
+                    longitude = point.longitude,
+                    accuracy = point.accuracy.coerceAtLeast(5f),
+                    totalWeight = calculateWeight(point.accuracy),
+                    sampleCount = 1,
+                    firstTimestamp = point.timestamp,
+                    lastTimestamp = point.timestamp
+                )
+                return ProcessResult(
+                    refinedPoint = point.copy(speed = 0f),
+                    isStationary = true,
+                    isBreakout = false
+                )
+            }
         }
 
         // 2. 이미 정지 상태인 경우
@@ -82,20 +88,60 @@ class StationaryAnchorManager(
                 point.latitude, point.longitude
             )
 
-            // A. 탈출(Breakout) 판정: 100m 이상 멀어지거나, 모션 센서가 활성화된 상태에서 50m 이상 벗어남
-            if (distance > breakoutDistanceMeters || (isMotionActive && distance > anchorRadiusMeters)) {
-                isStationaryConfirmed = false
-                currentAnchor = null
+            // 신뢰할 수 없는 거친 오차(> 50m, 예: 기지국 200m)는 탈출이나 앵커 갱신에 사용하지 않고 기존 앵커로 강제 고정
+            if (point.accuracy > 50f) {
+                val clampedPoint = point.copy(
+                    latitude = anchor.latitude,
+                    longitude = anchor.longitude,
+                    accuracy = anchor.accuracy,
+                    speed = 0f
+                )
                 return ProcessResult(
-                    refinedPoint = point,
-                    isStationary = false,
-                    isBreakout = true
+                    refinedPoint = clampedPoint,
+                    isStationary = true,
+                    isBreakout = false
                 )
             }
 
+            // A. 탈출(Breakout) 판정:
+            // - 모션 센서가 활성화(isMotionActive)되어 있고 거리가 벗어났거나,
+            // - 또는 거리가 100m 이상 멀어진 상태가 연속 2회 이상 고정밀도(accuracy <= 35m)로 유지될 때만 탈출
+            val isCandidateBreakout = (isMotionActive && distance > anchorRadiusMeters) ||
+                    (distance > breakoutDistanceMeters && point.accuracy <= 35f)
+
+            if (isCandidateBreakout) {
+                consecutiveBreakoutCount++
+                val canBreakout = (isMotionActive && point.speed > 1.2f) || (consecutiveBreakoutCount >= 2)
+                if (canBreakout) {
+                    isStationaryConfirmed = false
+                    currentAnchor = null
+                    consecutiveBreakoutCount = 0
+                    return ProcessResult(
+                        refinedPoint = point,
+                        isStationary = false,
+                        isBreakout = true
+                    )
+                } else {
+                    // 단발성 거리 튐(1회차)은 노이즈로 보고 기존 앵커 좌표 유지
+                    val clampedPoint = point.copy(
+                        latitude = anchor.latitude,
+                        longitude = anchor.longitude,
+                        accuracy = anchor.accuracy,
+                        speed = 0f
+                    )
+                    return ProcessResult(
+                        refinedPoint = clampedPoint,
+                        isStationary = true,
+                        isBreakout = false
+                    )
+                }
+            } else {
+                consecutiveBreakoutCount = 0
+            }
+
             // B. 앵커 구역 내 유지: 오차 반경에 따른 가중 누적 평균(Centroid Refinement) 계산
-            // 오차가 지나치게 큰 이상치(> 60m) 또는 앵커 반경 외곽 포인트는 수렴 계산에 반영하지 않고 기존 앵커 좌표 유지
-            if (distance <= anchorRadiusMeters && point.accuracy in 1f..60f) {
+            // 오차가 양호한 포인트(<= 40m) 및 앵커 반경 내 포인트만 수렴 계산에 반영
+            if (distance <= anchorRadiusMeters && point.accuracy in 1f..40f) {
                 val weight = calculateWeight(point.accuracy)
                 val newTotalWeight = anchor.totalWeight + weight
                 anchor.latitude = (anchor.latitude * anchor.totalWeight + point.latitude * weight) / newTotalWeight

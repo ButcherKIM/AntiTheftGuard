@@ -14,8 +14,8 @@ class SmartIntervalCalculatorTest {
         
         val config = SmartIntervalCalculator.getConfig(1.0f, false, isMotionActive = false)
         assertEquals(180_000L, config.interval)
-        assertEquals(Priority.PRIORITY_BALANCED_POWER_ACCURACY, config.priority)
-        assertEquals(30f, config.minUpdateDistanceMeters)
+        assertEquals(Priority.PRIORITY_HIGH_ACCURACY, config.priority)
+        assertEquals(15f, config.minUpdateDistanceMeters)
     }
 
     @Test
@@ -23,8 +23,8 @@ class SmartIntervalCalculatorTest {
         assertEquals(180_000L, SmartIntervalCalculator.calculate(0.0f, false, isMotionActive = true, isStationaryConfirmed = true))
         val config = SmartIntervalCalculator.getConfig(0.0f, false, isMotionActive = true, isStationaryConfirmed = true)
         assertEquals(180_000L, config.interval)
-        assertEquals(Priority.PRIORITY_BALANCED_POWER_ACCURACY, config.priority)
-        assertEquals(30f, config.minUpdateDistanceMeters)
+        assertEquals(Priority.PRIORITY_HIGH_ACCURACY, config.priority)
+        assertEquals(15f, config.minUpdateDistanceMeters)
     }
 
     @Test

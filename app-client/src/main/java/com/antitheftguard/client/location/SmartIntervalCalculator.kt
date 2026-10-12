@@ -39,9 +39,9 @@ object SmartIntervalCalculator {
     }
 
     /**
-     * 배터리 극대화를 위한 스마트 위치 설정 객체를 생성합니다.
-     * - 이동 중: PRIORITY_HIGH_ACCURACY (5초, 위성 GPS 풀가동, 거리 필터 0m)
-     * - 정지 중: PRIORITY_BALANCED_POWER_ACCURACY (180초, Wi-Fi/기지국 기반 저전력, 거리 필터 30m)
+     * 배터리와 정밀도의 균형을 위한 스마트 위치 설정 객체를 생성합니다.
+     * - 이동 중: PRIORITY_HIGH_ACCURACY (5초 주기, 위성 GPS 풀가동, 거리 필터 0m)
+     * - 정지 중: PRIORITY_HIGH_ACCURACY (180초 극저전력 주기, 기지국 220m 튐 원천 방지, 거리 필터 15m)
      */
     fun getConfig(
         speed: Float,
@@ -58,8 +58,8 @@ object SmartIntervalCalculator {
         } else {
             LocationConfig(
                 interval = INTERVAL_STATIONARY,
-                priority = Priority.PRIORITY_BALANCED_POWER_ACCURACY,
-                minUpdateDistanceMeters = 30f
+                priority = Priority.PRIORITY_HIGH_ACCURACY,
+                minUpdateDistanceMeters = 15f
             )
         }
     }

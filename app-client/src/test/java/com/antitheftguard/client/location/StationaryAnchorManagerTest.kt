@@ -79,21 +79,26 @@ class StationaryAnchorManagerTest {
     }
 
     @Test
-    fun `100m 이상 실제 이동 시 정지 앵커에서 탈출(Breakout)한다`() {
+    fun `100m 이상 실제 이동 시 2회 연속 감지되어야 정지 앵커에서 탈출(Breakout)한다`() {
         val baseTime = System.currentTimeMillis()
         val p1 = GpsPoint(37.566500, 126.978000, 10f, 0.0f, baseTime, 80)
         manager.processPoint(p1, isMotionActive = false)
         assertTrue(manager.isStationaryConfirmed)
 
-        // 약 200m 떨어진 위치로 이동한 포인트 (lat 차이 약 0.002 = 약 220m)
-        val pFar = GpsPoint(37.568500, 126.978000, 10f, 2.5f, baseTime + 30_000, 80)
-        val rFar = manager.processPoint(pFar, isMotionActive = false)
+        // 약 200m 떨어진 위치로 이동한 1회차 포인트: 단발성 노이즈로 보고 앵커 유지
+        val pFar1 = GpsPoint(37.568500, 126.978000, 10f, 2.5f, baseTime + 30_000, 80)
+        val rFar1 = manager.processPoint(pFar1, isMotionActive = false)
+        assertTrue(rFar1.isStationary)
+        assertFalse(rFar1.isBreakout)
 
-        assertFalse(rFar.isStationary)
-        assertTrue(rFar.isBreakout)
+        // 2회차 연속 감지 시 실제 이동으로 인정하여 정지 앵커 탈출(Breakout)
+        val pFar2 = GpsPoint(37.568600, 126.978000, 10f, 2.5f, baseTime + 35_000, 80)
+        val rFar2 = manager.processPoint(pFar2, isMotionActive = false)
+        assertFalse(rFar2.isStationary)
+        assertTrue(rFar2.isBreakout)
         assertFalse(manager.isStationaryConfirmed)
         assertNull(manager.currentAnchor)
-        assertEquals(37.568500, rFar.refinedPoint.latitude, 0.000001)
+        assertEquals(37.568600, rFar2.refinedPoint.latitude, 0.000001)
     }
 
     @Test

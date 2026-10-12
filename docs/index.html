@@ -889,16 +889,55 @@
       }
     }
 
+    // 두 좌표 간 구면 거리 계산 (Haversine 공식, 미터 단위)
+    function getDistanceMeters(lat1, lon1, lat2, lon2) {
+      const R = 6371000;
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLon = (lon2 - lon1) * Math.PI / 180;
+      const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return R * c;
+    }
+
+    // 오차가 큰 기지국/NLP 좌표(> 50m) 및 단발성 V자 좌표 튐 노이즈 필터링
+    function cleanTrajectoryPoints(points) {
+      if (!points || points.length === 0) return [];
+      // 1. 오차 50m 초과(기지국/NLP 추정치) 제거
+      const valid = points.filter(p => (p.accuracy == null || p.accuracy <= 50));
+      if (valid.length <= 2) return valid;
+
+      // 2. 단발성 V자형 좌표 튐 제거 (이전/다음과 각각 100m 이상 멀어지나 이전-다음 간격은 50m 이내)
+      const cleaned = [];
+      for (let i = 0; i < valid.length; i++) {
+        const curr = valid[i];
+        if (i > 0 && i < valid.length - 1) {
+          const prev = valid[i - 1];
+          const next = valid[i + 1];
+          const dPrev = getDistanceMeters(prev.latitude, prev.longitude, curr.latitude, curr.longitude);
+          const dNext = getDistanceMeters(curr.latitude, curr.longitude, next.latitude, next.longitude);
+          const dAcross = getDistanceMeters(prev.latitude, prev.longitude, next.latitude, next.longitude);
+          if (dPrev > 100 && dNext > 100 && dAcross < 50) {
+            continue; // 고립된 점프 제거
+          }
+        }
+        cleaned.push(curr);
+      }
+      return cleaned;
+    }
+
     // 15분 이상 수신 공백 시 직선 잇기 방지 (세그먼트 분리)
     function buildTrackSegments(points) {
       if (!points || points.length === 0) return [];
+      const cleaned = cleanTrajectoryPoints(points);
       const segments = [];
       let currentSegment = [];
 
-      for (let i = 0; i < points.length; i++) {
-        const pt = points[i];
+      for (let i = 0; i < cleaned.length; i++) {
+        const pt = cleaned[i];
         if (currentSegment.length > 0) {
-          const prev = points[i - 1];
+          const prev = cleaned[i - 1];
           const timeDiffMs = (pt.timestamp || 0) - (prev.timestamp || 0);
           if (timeDiffMs > 15 * 60 * 1000) {
             if (currentSegment.length > 0) segments.push(currentSegment);
@@ -1206,7 +1245,8 @@
         }
 
         document.getElementById('btn-return-live').style.display = 'inline-flex';
-        dailyHistoryPoints = daily.points.slice().sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+        const sortedRaw = daily.points.slice().sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+        dailyHistoryPoints = cleanTrajectoryPoints(sortedRaw);
 
         clearHistoryVisuals();
 
@@ -1439,7 +1479,7 @@
               initialBatches.forEach(batch => {
                 if (batch && Array.isArray(batch.points)) {
                   batch.points.forEach(pt => {
-                    if (pt && typeof pt.latitude === 'number' && typeof pt.longitude === 'number') {
+                    if (pt && typeof pt.latitude === 'number' && typeof pt.longitude === 'number' && (pt.accuracy == null || pt.accuracy <= 50)) {
                       cachedAllPoints.push(pt);
                     }
                   });
@@ -1492,7 +1532,7 @@
                   const batch = parseFirestoreDoc(item.document);
                   if (batch && Array.isArray(batch.points)) {
                     batch.points.forEach(pt => {
-                      if (pt && typeof pt.latitude === 'number' && typeof pt.longitude === 'number' && !existingTimestamps.has(pt.timestamp)) {
+                      if (pt && typeof pt.latitude === 'number' && typeof pt.longitude === 'number' && (pt.accuracy == null || pt.accuracy <= 50) && !existingTimestamps.has(pt.timestamp)) {
                         cachedAllPoints.push(pt);
                         existingTimestamps.add(pt.timestamp);
                       }

@@ -211,6 +211,11 @@ class GpsLoggingService : Service() {
     }
 
     private fun sendSingleGpsPoint(location: Location, overridePoint: GpsPoint? = null) {
+        if (overridePoint == null && location.accuracy > 50f) {
+            Log.d(TAG, "즉시 발신 스킵: 오차가 너무 큰 기지국 좌표 (accuracy=${location.accuracy}m > 50m)")
+            return
+        }
+
         val now = System.currentTimeMillis()
         // 2초 이내 동일 위치 중복 발신 방지
         if (now - lastImmediateLocationSentTime < 2000L) {
@@ -247,6 +252,12 @@ class GpsLoggingService : Service() {
                     batteryLevel = battery
                 )
                 stationaryAnchorManager.processPoint(rawPoint, isMotionActive).refinedPoint
+            }
+
+            // 최종 정제된 포인트도 50m 초과 시 발신 배제
+            if (point.accuracy > 50f) {
+                Log.d(TAG, "즉시 발신 스킵: 정제된 포인트 오차 초과 (accuracy=${point.accuracy}m > 50m)")
+                return@launch
             }
 
             // 1) Room DB 캐시
@@ -298,6 +309,12 @@ class GpsLoggingService : Service() {
                     // 정지 앵커 수렴 및 실내 드리프트 보정
                     val processResult = stationaryAnchorManager.processPoint(rawPoint, isMotionActive)
                     val processedPoint = processResult.refinedPoint
+
+                    // 정지 상태가 아닌 이동/단독 상태인데 오차가 50m 초과(기지국/거친 신호)인 경우 드랍
+                    if (!processResult.isStationary && processedPoint.accuracy > 50f) {
+                        Log.d(TAG, "거친 기지국 위치 노이즈 드랍 (accuracy=${processedPoint.accuracy}m > 50m)")
+                        continue
+                    }
 
                     if (processResult.isStationary) {
                         // 정지 앵커 좌표로 버퍼 내 대기 중인 이전 정지 포인트들도 소급 개선
