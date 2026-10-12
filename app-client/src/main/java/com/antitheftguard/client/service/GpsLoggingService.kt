@@ -211,8 +211,8 @@ class GpsLoggingService : Service() {
     }
 
     private fun sendSingleGpsPoint(location: Location, overridePoint: GpsPoint? = null) {
-        if (overridePoint == null && location.accuracy > 50f) {
-            Log.d(TAG, "즉시 발신 스킵: 오차가 너무 큰 기지국 좌표 (accuracy=${location.accuracy}m > 50m)")
+        if (overridePoint == null && location.accuracy > 500f) {
+            Log.d(TAG, "즉시 발신 스킵: 오차가 너무 큰 극단적 이상치 (accuracy=${location.accuracy}m > 500m)")
             return
         }
 
@@ -310,9 +310,9 @@ class GpsLoggingService : Service() {
                     val processResult = stationaryAnchorManager.processPoint(rawPoint, isMotionActive)
                     val processedPoint = processResult.refinedPoint
 
-                    // 정지 상태가 아닌 이동/단독 상태인데 오차가 50m 초과(기지국/거친 신호)인 경우 드랍
-                    if (!processResult.isStationary && processedPoint.accuracy > 50f) {
-                        Log.d(TAG, "거친 기지국 위치 노이즈 드랍 (accuracy=${processedPoint.accuracy}m > 50m)")
+                    // 정지 상태가 아닌 이동/단독 상태에서 오차가 500m를 초과하는 극단적 하드웨어 글리치만 드랍
+                    if (!processResult.isStationary && processedPoint.accuracy > 500f) {
+                        Log.d(TAG, "극단적 오차 좌표 드랍 (accuracy=${processedPoint.accuracy}m > 500m)")
                         continue
                     }
 

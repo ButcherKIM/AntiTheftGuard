@@ -847,6 +847,7 @@
     let phoneMarker = null;
     let accuracyCircle = null;
     let polyline = L.polyline([], { color: '#3b82f6', weight: 4, opacity: 0.85 }).addTo(map);
+    let lowAccPolyline = L.polyline([], { color: '#f59e0b', weight: 3, opacity: 0.85, dashArray: '6, 8' }).addTo(map);
     let pathCoordinates = [];
     let hasAutoCentered = false;
 
@@ -863,14 +864,16 @@
 
     function updateMapLocation(lat, lng, accuracy) {
       const latlng = [lat, lng];
+      const isLowAcc = accuracy && accuracy > 50;
+      const circleColor = isLowAcc ? '#f59e0b' : '#3b82f6';
 
       if (!phoneMarker) {
         phoneMarker = L.marker(latlng, { icon: phoneIcon }).addTo(map);
         accuracyCircle = L.circle(latlng, {
           radius: accuracy || 15,
-          color: '#3b82f6',
-          fillColor: '#3b82f6',
-          fillOpacity: 0.18,
+          color: circleColor,
+          fillColor: circleColor,
+          fillOpacity: isLowAcc ? 0.12 : 0.18,
           weight: 1
         }).addTo(map);
         map.setView(latlng, 17);
@@ -880,6 +883,11 @@
         phoneMarker.setLatLng(latlng);
         accuracyCircle.setLatLng(latlng);
         if (accuracy) accuracyCircle.setRadius(accuracy);
+        accuracyCircle.setStyle({
+          color: circleColor,
+          fillColor: circleColor,
+          fillOpacity: isLowAcc ? 0.12 : 0.18
+        });
 
         if (!hasAutoCentered) {
           map.setView(latlng, 17);
@@ -950,6 +958,65 @@
       return segments;
     }
 
+    // 실시간 궤적 세그먼트 분리 (정상 구간: 실선, 오차 50m 초과 저정밀 구간: 주황 점선, 15분 이상 공백: 분리)
+    function buildLiveTrackSegments(points) {
+      if (!points || points.length === 0) return { solid: [], dashed: [] };
+      const solidSegments = [];
+      const dashedSegments = [];
+      let currentSolidSeg = [];
+      let currentDashedSeg = [];
+
+      for (let i = 1; i < points.length; i++) {
+        const prev = points[i - 1];
+        const pt = points[i];
+        const timeDiffMs = (pt.timestamp || 0) - (prev.timestamp || 0);
+
+        // 15분 이상 공백 시 세그먼트 단절
+        if (timeDiffMs > 15 * 60 * 1000) {
+          if (currentSolidSeg.length > 0) {
+            solidSegments.push(currentSolidSeg);
+            currentSolidSeg = [];
+          }
+          if (currentDashedSeg.length > 0) {
+            dashedSegments.push(currentDashedSeg);
+            currentDashedSeg = [];
+          }
+          continue;
+        }
+
+        const prevLatLng = [prev.latitude, prev.longitude];
+        const currLatLng = [pt.latitude, pt.longitude];
+        const isLowAcc = (prev.accuracy != null && prev.accuracy > 50) || (pt.accuracy != null && pt.accuracy > 50);
+
+        if (isLowAcc) {
+          if (currentSolidSeg.length > 0) {
+            solidSegments.push(currentSolidSeg);
+            currentSolidSeg = [];
+          }
+          if (currentDashedSeg.length === 0) {
+            currentDashedSeg = [prevLatLng, currLatLng];
+          } else {
+            currentDashedSeg.push(currLatLng);
+          }
+        } else {
+          if (currentDashedSeg.length > 0) {
+            dashedSegments.push(currentDashedSeg);
+            currentDashedSeg = [];
+          }
+          if (currentSolidSeg.length === 0) {
+            currentSolidSeg = [prevLatLng, currLatLng];
+          } else {
+            currentSolidSeg.push(currLatLng);
+          }
+        }
+      }
+
+      if (currentSolidSeg.length > 0) solidSegments.push(currentSolidSeg);
+      if (currentDashedSeg.length > 0) dashedSegments.push(currentDashedSeg);
+
+      return { solid: solidSegments, dashed: dashedSegments };
+    }
+
     document.getElementById('btn-recenter').addEventListener('click', () => {
       fixMapSize();
       if (phoneMarker) {
@@ -963,6 +1030,7 @@
       if (typeof clearHistoryVisuals === 'function') clearHistoryVisuals();
       pathCoordinates = [];
       polyline.setLatLngs([]);
+      lowAccPolyline.setLatLngs([]);
     });
 
     document.getElementById('btn-refresh').addEventListener('click', () => {
@@ -972,6 +1040,7 @@
         cachedAllPoints = [];
         pathCoordinates = [];
         polyline.setLatLngs([]);
+        lowAccPolyline.setLatLngs([]);
         syncDeviceData(currentDeviceId);
       } else {
         loadAvailableDevices();
@@ -1142,6 +1211,7 @@
         pathCoordinates = [];
         cachedAllPoints = [];
         polyline.setLatLngs([]);
+        lowAccPolyline.setLatLngs([]);
         isInitialHistoryLoaded = false;
         lastKnownSeen = 0;
         if (isDailyHistoryMode) {
@@ -1189,6 +1259,7 @@
         historyMarkers.forEach(m => map.removeLayer(m));
         historyMarkers = [];
       }
+      lowAccPolyline.setLatLngs([]);
     }
 
     // 기본 날짜를 '어제'로 자동 세팅
@@ -1349,8 +1420,9 @@
       statusEl.innerHTML = "";
 
       if (cachedAllPoints.length > 0) {
-        pathCoordinates = buildTrackSegments(cachedAllPoints);
-        polyline.setLatLngs(pathCoordinates);
+        const liveSegs = buildLiveTrackSegments(cachedAllPoints);
+        polyline.setLatLngs(liveSegs.solid);
+        lowAccPolyline.setLatLngs(liveSegs.dashed);
         const latest = cachedAllPoints[cachedAllPoints.length - 1];
         updateMapLocation(latest.latitude, latest.longitude, latest.accuracy);
         if (cachedAllPoints.length > 1) {
@@ -1479,7 +1551,7 @@
               initialBatches.forEach(batch => {
                 if (batch && Array.isArray(batch.points)) {
                   batch.points.forEach(pt => {
-                    if (pt && typeof pt.latitude === 'number' && typeof pt.longitude === 'number' && (pt.accuracy == null || pt.accuracy <= 50)) {
+                    if (pt && typeof pt.latitude === 'number' && typeof pt.longitude === 'number') {
                       cachedAllPoints.push(pt);
                     }
                   });
@@ -1532,7 +1604,7 @@
                   const batch = parseFirestoreDoc(item.document);
                   if (batch && Array.isArray(batch.points)) {
                     batch.points.forEach(pt => {
-                      if (pt && typeof pt.latitude === 'number' && typeof pt.longitude === 'number' && (pt.accuracy == null || pt.accuracy <= 50) && !existingTimestamps.has(pt.timestamp)) {
+                      if (pt && typeof pt.latitude === 'number' && typeof pt.longitude === 'number' && !existingTimestamps.has(pt.timestamp)) {
                         cachedAllPoints.push(pt);
                         existingTimestamps.add(pt.timestamp);
                       }
@@ -1556,16 +1628,21 @@
           // 시간순 정렬 (과거 -> 최신)
           cachedAllPoints.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
 
-          // 맵 궤적 업데이트 (15분 이상 공백 시 직선 잇기 방지)
-          pathCoordinates = buildTrackSegments(cachedAllPoints);
-          polyline.setLatLngs(pathCoordinates);
+          // 맵 궤적 업데이트 (정상 구간: 실선, 저정밀/기지국 구간: 주황 점선, 15분 이상 공백: 분리)
+          const liveSegs = buildLiveTrackSegments(cachedAllPoints);
+          polyline.setLatLngs(liveSegs.solid);
+          lowAccPolyline.setLatLngs(liveSegs.dashed);
 
           // 가장 최신 위치
           const latest = cachedAllPoints[cachedAllPoints.length - 1];
           updateMapLocation(latest.latitude, latest.longitude, latest.accuracy);
 
           document.getElementById('val-speed').innerText = `${((latest.speed || 0) * 3.6).toFixed(1)} km/h`;
-          document.getElementById('val-accuracy').innerText = `±${Math.round(latest.accuracy || 0)} m`;
+          if (latest.accuracy != null && latest.accuracy > 50) {
+            document.getElementById('val-accuracy').innerHTML = `<span style="color: #f59e0b; font-weight: 700;">±${Math.round(latest.accuracy)} m <small>(저정밀/점선)</small></span>`;
+          } else {
+            document.getElementById('val-accuracy').innerText = `±${Math.round(latest.accuracy || 0)} m`;
+          }
 
           if (latest.batteryLevel !== undefined) {
             bestBattery = latest.batteryLevel;
