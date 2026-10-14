@@ -49,29 +49,35 @@ class DailyRollupWorker(
             val gpsDao = db.gpsPointDao()
             val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
 
-            // 어제부터 최근 7일 전까지의 날짜 중 아직 업로드되지 않은 일별 데이터 확인 및 롤업
-            val calendar = Calendar.getInstance()
-            // 어제(1일 전)로 이동
-            calendar.add(Calendar.DAY_OF_YEAR, -1)
+            // 오늘(0일 전, 진행 중인 당일 누적 데이터)부터 최근 7일 전까지 롤업 확인
+            // 0: 오늘 (하루 4회 주기적 갱신), 1..7: 과거 날짜 (완료 시 완료 플래그 저장)
+            for (daysAgo in 0..7) {
+                val calendar = Calendar.getInstance()
+                calendar.timeInMillis = System.currentTimeMillis()
+                calendar.add(Calendar.DAY_OF_YEAR, -daysAgo)
 
-            for (i in 1..7) {
-                // 해당 날짜의 00:00:00.000 ~ 23:59:59.999 계산
+                // 해당 날짜의 00:00:00.000 계산
                 calendar.set(Calendar.HOUR_OF_DAY, 0)
                 calendar.set(Calendar.MINUTE, 0)
                 calendar.set(Calendar.SECOND, 0)
                 calendar.set(Calendar.MILLISECOND, 0)
                 val startOfDay = calendar.timeInMillis
 
-                calendar.set(Calendar.HOUR_OF_DAY, 23)
-                calendar.set(Calendar.MINUTE, 59)
-                calendar.set(Calendar.SECOND, 59)
-                calendar.set(Calendar.MILLISECOND, 999)
-                val endOfDay = calendar.timeInMillis
+                val endOfDay = if (daysAgo == 0) {
+                    System.currentTimeMillis()
+                } else {
+                    calendar.set(Calendar.HOUR_OF_DAY, 23)
+                    calendar.set(Calendar.MINUTE, 59)
+                    calendar.set(Calendar.SECOND, 59)
+                    calendar.set(Calendar.MILLISECOND, 999)
+                    calendar.timeInMillis
+                }
 
                 val dateStr = dateFormat.format(calendar.time)
                 val prefKey = "daily_rollup_done_$dateStr"
 
-                val isAlreadyDone = prefs.getBoolean(prefKey, false)
+                // 당일(daysAgo == 0)은 좌표가 계속 실시간 추가되므로 완료 플래그를 체크하지 않고 항상 최신 누적치로 갱신
+                val isAlreadyDone = if (daysAgo == 0) false else prefs.getBoolean(prefKey, false)
                 if (!isAlreadyDone) {
                     val points = gpsDao.getPointsBetween(startOfDay, endOfDay)
                     if (points.isNotEmpty()) {
@@ -119,22 +125,21 @@ class DailyRollupWorker(
 
                             val saveResult = firestoreManager.saveDailyHistory(dailyHistory)
                             if (saveResult.isSuccess) {
-                                prefs.edit().putBoolean(prefKey, true).apply()
-                                Log.d(TAG, "일별 통합 롤업 저장 성공: $dateStr (${cleanedGpsPoints.size} 포인트)")
+                                if (daysAgo > 0) {
+                                    prefs.edit().putBoolean(prefKey, true).apply()
+                                }
+                                Log.d(TAG, "일별 통합 롤업 저장 성공: $dateStr (${cleanedGpsPoints.size} 포인트, daysAgo=$daysAgo)")
                             } else {
                                 Log.w(TAG, "일별 통합 롤업 저장 실패 ($dateStr): ${saveResult.exceptionOrNull()?.message}")
                             }
-                        } else {
+                        } else if (daysAgo > 0) {
                             prefs.edit().putBoolean(prefKey, true).apply()
                         }
-                    } else {
-                        // 해당 날짜에 기록된 포인트가 없다면 완료 처리하여 반복 조회 방지
+                    } else if (daysAgo > 0) {
+                        // 해당 날짜에 기록된 포인트가 없다면 완료 처리하여 반복 조회 방지 (과거 날짜만)
                         prefs.edit().putBoolean(prefKey, true).apply()
                     }
                 }
-
-                // 하루 전으로 이동하여 검사 계속
-                calendar.add(Calendar.DAY_OF_YEAR, -1)
             }
 
             // 30일 지난 오래된 로컬 Room DB 데이터 정리

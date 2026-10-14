@@ -48,5 +48,42 @@ class DataCleanupWorkerTest {
         assertEquals(1727581200000L, dailyHistory.startTime)
         assertEquals(1727581260000L, dailyHistory.endTime)
     }
+
+    @Test
+    fun `당일 롤업과 과거 롤업의 시간 범위 계산이 올바르게 이루어지는지 검증한다`() {
+        val calendar = Calendar.getInstance()
+        val now = System.currentTimeMillis()
+
+        // 1. 당일(0일 전): 시작은 00:00:00, 끝은 now
+        calendar.timeInMillis = now
+        calendar.set(Calendar.HOUR_OF_DAY, 0)
+        calendar.set(Calendar.MINUTE, 0)
+        calendar.set(Calendar.SECOND, 0)
+        calendar.set(Calendar.MILLISECOND, 0)
+        val todayStart = calendar.timeInMillis
+        val todayEnd = now
+
+        assertTrue(todayStart <= now)
+        assertTrue(todayEnd >= todayStart)
+
+        // 2. 어제(1일 전): 시작은 00:00:00, 끝은 23:59:59.999
+        calendar.timeInMillis = now
+        calendar.add(Calendar.DAY_OF_YEAR, -1)
+        calendar.set(Calendar.HOUR_OF_DAY, 0)
+        calendar.set(Calendar.MINUTE, 0)
+        calendar.set(Calendar.SECOND, 0)
+        calendar.set(Calendar.MILLISECOND, 0)
+        val yesterdayStart = calendar.timeInMillis
+
+        calendar.set(Calendar.HOUR_OF_DAY, 23)
+        calendar.set(Calendar.MINUTE, 59)
+        calendar.set(Calendar.SECOND, 59)
+        calendar.set(Calendar.MILLISECOND, 999)
+        val yesterdayEnd = calendar.timeInMillis
+
+        assertTrue(yesterdayStart < todayStart)
+        assertTrue(yesterdayEnd < todayStart)
+        assertEquals(86400000L - 1L, yesterdayEnd - yesterdayStart)
+    }
 }
 

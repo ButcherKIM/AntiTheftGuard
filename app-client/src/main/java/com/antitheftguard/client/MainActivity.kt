@@ -488,14 +488,14 @@ class MainActivity : AppCompatActivity() {
             .setRequiredNetworkType(NetworkType.CONNECTED)
             .build()
 
-        // 12시간 주기 정기 워커 등록 (네트워크 연결 시 동작)
+        // 6시간 주기 정기 워커 등록 (하루 4회 롤업, 네트워크 연결 시 동작)
         val periodicWork = PeriodicWorkRequestBuilder<DailyRollupWorker>(
-            12, TimeUnit.HOURS
+            6, TimeUnit.HOURS
         ).setConstraints(constraints).build()
 
         WorkManager.getInstance(this).enqueueUniquePeriodicWork(
             "DailyRollupPeriodicWork",
-            ExistingPeriodicWorkPolicy.KEEP,
+            ExistingPeriodicWorkPolicy.UPDATE,
             periodicWork
         )
 

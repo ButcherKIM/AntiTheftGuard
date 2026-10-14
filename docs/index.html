@@ -654,6 +654,14 @@
           <button class="map-btn" id="btn-load-daily-history" style="white-space: nowrap;"><i class="fa-solid fa-magnifying-glass"></i> 조회</button>
           <button class="map-btn" id="btn-return-live" style="display: none; background: rgba(16, 185, 129, 0.2); border-color: #10b981; color: #34d399; white-space: nowrap;"><i class="fa-solid fa-satellite-dish"></i> 실시간</button>
         </div>
+        <div style="display: flex; gap: 6px; margin-top: 6px;">
+          <button id="btn-quick-today" type="button" style="flex: 1; padding: 6px 10px; background: rgba(59, 130, 246, 0.12); border: 1px solid rgba(59, 130, 246, 0.35); border-radius: 6px; color: #60a5fa; font-size: 0.8rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 4px; transition: all 0.2s;">
+            <i class="fa-solid fa-clock-rotate-left"></i> 오늘 (당일 롤업)
+          </button>
+          <button id="btn-quick-yesterday" type="button" style="flex: 1; padding: 6px 10px; background: rgba(148, 163, 184, 0.1); border: 1px solid rgba(148, 163, 184, 0.25); border-radius: 6px; color: #cbd5e1; font-size: 0.8rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 4px; transition: all 0.2s;">
+            <i class="fa-regular fa-calendar"></i> 어제
+          </button>
+        </div>
         <div id="history-status-msg" style="margin-top: 6px; font-size: 0.82rem; color: var(--text-muted); line-height: 1.4; display: none;"></div>
       </div>
 
@@ -1327,7 +1335,7 @@
           return;
         }
         if (res.status === 404) {
-          statusEl.innerHTML = `<span style="color: #f87171"><i class="fa-solid fa-circle-exclamation"></i> ${dateStr} 일별 통합 기록이 없습니다.<br><small style="color: #94a3b8;">(기기가 꺼져 있었거나 아직 자정 업로드 전일 수 있습니다.)</small></span>`;
+          statusEl.innerHTML = `<span style="color: #f87171"><i class="fa-solid fa-circle-exclamation"></i> ${dateStr} 일별 통합 기록이 없습니다.<br><small style="color: #94a3b8;">(기기가 꺼져 있었거나 롤업 주기[하루 4회] 도래 전일 수 있습니다.)</small></span>`;
           return;
         }
         if (!res.ok) {
@@ -1483,6 +1491,31 @@
       const devId = currentDeviceId || document.getElementById('target-device-id').value.trim();
       const dateStr = document.getElementById('input-history-date').value;
       loadDailyHistory(devId, dateStr);
+    });
+
+    document.getElementById('btn-quick-today')?.addEventListener('click', () => {
+      const devId = currentDeviceId || document.getElementById('target-device-id').value.trim();
+      const today = new Date();
+      const yyyy = today.getFullYear();
+      const mm = String(today.getMonth() + 1).padStart(2, '0');
+      const dd = String(today.getDate()).padStart(2, '0');
+      const todayStr = `${yyyy}-${mm}-${dd}`;
+      const histDateInput = document.getElementById('input-history-date');
+      if (histDateInput) histDateInput.value = todayStr;
+      loadDailyHistory(devId, todayStr);
+    });
+
+    document.getElementById('btn-quick-yesterday')?.addEventListener('click', () => {
+      const devId = currentDeviceId || document.getElementById('target-device-id').value.trim();
+      const yest = new Date();
+      yest.setDate(yest.getDate() - 1);
+      const yyyy = yest.getFullYear();
+      const mm = String(yest.getMonth() + 1).padStart(2, '0');
+      const dd = String(yest.getDate()).padStart(2, '0');
+      const yestStr = `${yyyy}-${mm}-${dd}`;
+      const histDateInput = document.getElementById('input-history-date');
+      if (histDateInput) histDateInput.value = yestStr;
+      loadDailyHistory(devId, yestStr);
     });
 
     document.getElementById('btn-return-live').addEventListener('click', () => {
@@ -2325,9 +2358,9 @@
         <span><i class="fa-solid fa-circle-info" style="color: #60a5fa; margin-right: 6px;"></i>일별 롤업 경로 안내</span>
         <button id="btn-close-history-info" style="background: none; border: none; color: #94a3b8; font-size: 1.4rem; cursor: pointer; padding: 0 4px; line-height: 1;">&times;</button>
       </div>
-      <p style="margin: 0 0 10px 0;">조회할 날짜를 선택하면 기기가 하루 동안 수집한 전체 이동/정지 경로를 단일 통합 문서(1회 읽기)로 가져와 지도에 표시합니다.</p>
+      <p style="margin: 0 0 10px 0;">조회할 날짜를 선택하면 기기가 수집한 전체 이동/정지 경로를 단일 통합 문서(1회 읽기)로 가져와 지도에 표시합니다.</p>
       <div style="background: var(--bg-card); border-radius: 8px; padding: 10px; color: #94a3b8; font-size: 0.8rem; line-height: 1.4;">
-        💡 <strong>팁:</strong> 쿼터를 99.9% 절약하는 최적화 구조로, 어제 이전의 30일치 기록을 1회 읽기만으로 자유롭게 열람할 수 있습니다.
+        💡 <strong>안내:</strong> 당일(오늘) 누적 이동 기록은 하루 4회(6시간마다) 주기적으로 자동 갱신되며, 지나간 과거 날짜(최대 30일)는 단 1회 읽기만으로 자유롭게 열람할 수 있습니다.
       </div>
     </div>
   </div>
