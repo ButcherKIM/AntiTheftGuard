@@ -116,9 +116,9 @@ class StationaryAnchorManager(
 
             if (isCandidateBreakout) {
                 consecutiveBreakoutCount++
-                // 물리적 순간이동 배제: 속도가 0에 가깝거나 앵커에서 1km 이상 비현실적으로 멀어진 단발 점프는 속도 조건 미충족
+                // 물리적 순간이동 배제: 속도가 0에 가깝거나 앵커에서 1km 이상 비현실적으로 멀어진 점프는 탈출 불가
                 val isTeleportJump = distance > 1000f && point.speed < 1.0f
-                val canBreakout = !isTeleportJump && ((isMotionActive && point.speed > 1.2f) || (consecutiveBreakoutCount >= 2))
+                val canBreakout = !isTeleportJump && point.speed >= 1.0f && ((isMotionActive && point.speed > 1.2f) || (consecutiveBreakoutCount >= 2))
                 if (canBreakout) {
                     isStationaryConfirmed = false
                     currentAnchor = null
@@ -129,7 +129,7 @@ class StationaryAnchorManager(
                         isBreakout = true
                     )
                 } else {
-                    // 단발성 거리 튐(1회차) 또는 텔레포트 점프는 노이즈로 보고 기존 앵커 좌표 유지
+                    // 단발성 거리 튐(1회차) 또는 속도가 0인 실내 Wi-Fi 가짜 도약은 노이즈로 보고 기존 앵커 좌표 유지
                     val clampedPoint = point.copy(
                         latitude = anchor.latitude,
                         longitude = anchor.longitude,

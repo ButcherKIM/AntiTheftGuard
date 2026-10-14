@@ -917,54 +917,37 @@
       return R * c;
     }
 
-    // 오차가 큰 기지국/NLP 좌표(> 100m) 및 단발성 V자 좌표 튐 노이즈 필터링 (과거 일별 롤업용)
+    // 일별 롤업 및 과거 궤적 정제 (실시간 궤적 정제와 동일 로직 적용)
     function cleanTrajectoryPoints(points) {
-      if (!points || points.length === 0) return [];
-      // 1. 오차 100m 초과(기지국/NLP 거친 추정치) 제거
-      const valid = points.filter(p => (p.accuracy == null || p.accuracy <= 100));
-      if (valid.length <= 2) return valid;
-
-      // 2. 단발성 V자형 좌표 튐 제거 (이전/다음과 각각 100m 이상 멀어지나 이전-다음 간격은 100m 이내 또는 비율 낮음)
-      const cleaned = [];
-      for (let i = 0; i < valid.length; i++) {
-        const curr = valid[i];
-        if (i > 0 && i < valid.length - 1) {
-          const prev = valid[i - 1];
-          const next = valid[i + 1];
-          const dPrev = getDistanceMeters(prev.latitude, prev.longitude, curr.latitude, curr.longitude);
-          const dNext = getDistanceMeters(curr.latitude, curr.longitude, next.latitude, next.longitude);
-          const dAcross = getDistanceMeters(prev.latitude, prev.longitude, next.latitude, next.longitude);
-          if (dPrev > 100 && dNext > 100 && (dAcross < 100 || dAcross < Math.min(dPrev, dNext) * 0.25)) {
-            continue; // 고립된 점프 제거
-          }
-        }
-        cleaned.push(curr);
-      }
-      return cleaned;
+      return cleanLiveTrajectoryPoints(points);
     }
 
-    // 실시간 궤적 정제: 극단적 기지국 이상치 및 단발성 V자형 순간이동 필터링
+    // 실시간 궤적 정제: 극단적 기지국 이상치, 단발성 V자형 순간이동, 정지 중 Wi-Fi 지그재그 튐 필터링
     function cleanLiveTrajectoryPoints(points) {
       if (!points || points.length <= 2) return points || [];
-      const cleaned = [];
+
+      // 1단계: 극단적 오차 (> 300m, 기지국 레벨 이상치) 배제
+      const p1 = [];
       for (let i = 0; i < points.length; i++) {
         const curr = points[i];
-        // 극단적 오차 (> 300m, 기지국 레벨 이상치) 배제
-        if (curr.accuracy != null && curr.accuracy > 300) {
-          continue;
-        }
+        if (curr.accuracy != null && curr.accuracy > 300) continue;
+        p1.push(curr);
+      }
+      if (p1.length <= 2) return p1;
 
-        if (i > 0 && i < points.length - 1) {
-          const prev = points[i - 1];
-          const next = points[i + 1];
+      // 2단계: 단발성 V자형 순간이동 (> 80m 점프 후 즉시 복귀) 및 150km/h 초과 순간이동 튐 필터링
+      const p2 = [];
+      for (let i = 0; i < p1.length; i++) {
+        const curr = p1[i];
+        if (i > 0 && i < p1.length - 1) {
+          const prev = p1[i - 1];
+          const next = p1[i + 1];
           const dPrev = getDistanceMeters(prev.latitude, prev.longitude, curr.latitude, curr.longitude);
           const dNext = getDistanceMeters(curr.latitude, curr.longitude, next.latitude, next.longitude);
           const dAcross = getDistanceMeters(prev.latitude, prev.longitude, next.latitude, next.longitude);
 
-          // 1. 고립된 V자형 튐: 이전 및 다음과 각각 100m 이상 멀어지나 이전-다음 간격은 100m 이내
-          const isVSpike = (dPrev > 100 && dNext > 100 && (dAcross < 100 || dAcross < Math.min(dPrev, dNext) * 0.25));
+          const isVSpike = (dPrev > 80 && dNext > 80 && (dAcross < 80 || dAcross < Math.min(dPrev, dNext) * 0.3));
 
-          // 2. 비현실적 순간이동 속도 (> 150 km/h) 튐 후 복귀
           const dt1 = Math.max(1, ((curr.timestamp || 0) - (prev.timestamp || 0)) / 1000);
           const dt2 = Math.max(1, ((next.timestamp || 0) - (curr.timestamp || 0)) / 1000);
           const speed1 = (dPrev / dt1) * 3.6;
@@ -972,11 +955,52 @@
           const isTeleportReturn = (speed1 > 150 || speed2 > 150) && (dAcross < 200);
 
           if (isVSpike || isTeleportReturn) {
-            continue; // 가짜 순간이동 노이즈 제외
+            continue;
           }
         }
-        cleaned.push(curr);
+        p2.push(curr);
       }
+
+      // 3단계: 정지(speed < 0.8 m/s) 상태에서의 다중 픽스 Wi-Fi 핑퐁 수렴 (Stationary Cluster Collapse)
+      // 물리적 이동이 없는 정지 구역(< 180m 반경) 내에서 발생하는 가짜 지그재그를 최고 정밀도 단일 앵커로 수렴
+      const cleaned = [];
+      let i = 0;
+      while (i < p2.length) {
+        const curr = p2[i];
+        if ((curr.speed || 0) >= 0.8) {
+          cleaned.push(curr);
+          i++;
+        } else {
+          let j = i;
+          let bestPt = curr;
+          const cluster = [curr];
+          while (j + 1 < p2.length && (p2[j + 1].speed || 0) < 0.8) {
+            j++;
+            const nextP = p2[j];
+            const d = getDistanceMeters(curr.latitude, curr.longitude, nextP.latitude, nextP.longitude);
+            if (d < 180) {
+              cluster.push(nextP);
+              if ((nextP.accuracy || 999) < (bestPt.accuracy || 999)) {
+                bestPt = nextP;
+              }
+            } else {
+              break;
+            }
+          }
+          // 정지 클러스터를 가장 정확한 단일 앵커 좌표로 고정
+          for (let k = 0; k < cluster.length; k++) {
+            cleaned.push({
+              ...cluster[k],
+              latitude: bestPt.latitude,
+              longitude: bestPt.longitude,
+              accuracy: bestPt.accuracy,
+              speed: 0
+            });
+          }
+          i = j + 1;
+        }
+      }
+
       return cleaned;
     }
 
@@ -1032,7 +1056,13 @@
 
         const prevLatLng = [prev.latitude, prev.longitude];
         const currLatLng = [pt.latitude, pt.longitude];
-        const isLowAcc = (pt.accuracy != null && pt.accuracy > 100);
+        const dFromPrev = getDistanceMeters(prev.latitude, prev.longitude, pt.latitude, pt.longitude);
+
+        // 주행 연속성 보호:
+        // 이전 좌표와의 거리가 40m 이내로 도로 상에서 가깝게 연속되어 있다면, 일시적으로 acc가 100~150m로 튀어도 정상 주행 실선(solid)으로 유지!
+        // 점선(dashed) 조건: acc > 100 이면서 동시에 이전 좌표와의 거리가 40m 이상 벌어졌을 때만!
+        const isContinuousMove = dFromPrev <= 40;
+        const isLowAcc = (pt.accuracy != null && pt.accuracy > 100) && !isContinuousMove;
 
         if (isLowAcc) {
           if (currentSolidSeg.length > 0) {

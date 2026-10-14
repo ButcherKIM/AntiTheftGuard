@@ -113,14 +113,51 @@ class DailyRollupWorker(
                             cleanedGpsPoints.add(curr)
                         }
 
-                        if (cleanedGpsPoints.isNotEmpty()) {
+                        // 3. 정지(speed < 0.8 m/s) 상태에서의 Wi-Fi 다중 픽스 지그재그 튐 수렴 (Stationary Cluster Collapse)
+                        val finalPoints = mutableListOf<GpsPoint>()
+                        var i = 0
+                        while (i < cleanedGpsPoints.size) {
+                            val curr = cleanedGpsPoints[i]
+                            if (curr.speed >= 0.8f) {
+                                finalPoints.add(curr)
+                                i++
+                            } else {
+                                var j = i
+                                var bestPt = curr
+                                val cluster = mutableListOf(curr)
+                                while (j + 1 < cleanedGpsPoints.size && cleanedGpsPoints[j + 1].speed < 0.8f) {
+                                    j++
+                                    val nextP = cleanedGpsPoints[j]
+                                    val d = StationaryAnchorManager.distanceBetweenMeters(curr.latitude, curr.longitude, nextP.latitude, nextP.longitude)
+                                    if (d < 180f) {
+                                        cluster.add(nextP)
+                                        if (nextP.accuracy < bestPt.accuracy) {
+                                            bestPt = nextP
+                                        }
+                                    } else {
+                                        break
+                                    }
+                                }
+                                for (k in cluster.indices) {
+                                    finalPoints.add(cluster[k].copy(
+                                        latitude = bestPt.latitude,
+                                        longitude = bestPt.longitude,
+                                        accuracy = bestPt.accuracy,
+                                        speed = 0f
+                                    ))
+                                }
+                                i = j + 1
+                            }
+                        }
+
+                        if (finalPoints.isNotEmpty()) {
                             val dailyHistory = DailyHistory(
                                 deviceId = deviceId,
                                 date = dateStr,
-                                startTime = cleanedGpsPoints.first().timestamp,
-                                endTime = cleanedGpsPoints.last().timestamp,
-                                pointCount = cleanedGpsPoints.size,
-                                points = cleanedGpsPoints
+                                startTime = finalPoints.first().timestamp,
+                                endTime = finalPoints.last().timestamp,
+                                pointCount = finalPoints.size,
+                                points = finalPoints
                             )
 
                             val saveResult = firestoreManager.saveDailyHistory(dailyHistory)
