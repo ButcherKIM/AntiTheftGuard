@@ -847,7 +847,7 @@
     let phoneMarker = null;
     let accuracyCircle = null;
     let polyline = L.polyline([], { color: '#3b82f6', weight: 4, opacity: 0.85 }).addTo(map);
-    let lowAccPolyline = L.polyline([], { color: '#f59e0b', weight: 3, opacity: 0.85, dashArray: '6, 8' }).addTo(map);
+    let lowAccPolyline = L.polyline([], { color: '#f59e0b', weight: 2, opacity: 0.8, dashArray: '5, 7' }).addTo(map);
     let pathCoordinates = [];
     let hasAutoCentered = false;
 
@@ -1565,7 +1565,7 @@
                 structuredQuery: {
                   from: [{ collectionId: 'gps_batches' }],
                   orderBy: [{ field: { fieldPath: 'startTime' }, direction: 'DESCENDING' }],
-                  limit: 50
+                  limit: 100
                 }
               })
             });
