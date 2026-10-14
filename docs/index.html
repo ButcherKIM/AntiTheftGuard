@@ -909,14 +909,14 @@
       return R * c;
     }
 
-    // 오차가 큰 기지국/NLP 좌표(> 50m) 및 단발성 V자 좌표 튐 노이즈 필터링
+    // 오차가 큰 기지국/NLP 좌표(> 50m) 및 단발성 V자 좌표 튐 노이즈 필터링 (과거 일별 롤업용)
     function cleanTrajectoryPoints(points) {
       if (!points || points.length === 0) return [];
       // 1. 오차 50m 초과(기지국/NLP 추정치) 제거
       const valid = points.filter(p => (p.accuracy == null || p.accuracy <= 50));
       if (valid.length <= 2) return valid;
 
-      // 2. 단발성 V자형 좌표 튐 제거 (이전/다음과 각각 100m 이상 멀어지나 이전-다음 간격은 50m 이내)
+      // 2. 단발성 V자형 좌표 튐 제거 (이전/다음과 각각 100m 이상 멀어지나 이전-다음 간격은 100m 이내 또는 비율 낮음)
       const cleaned = [];
       for (let i = 0; i < valid.length; i++) {
         const curr = valid[i];
@@ -926,8 +926,40 @@
           const dPrev = getDistanceMeters(prev.latitude, prev.longitude, curr.latitude, curr.longitude);
           const dNext = getDistanceMeters(curr.latitude, curr.longitude, next.latitude, next.longitude);
           const dAcross = getDistanceMeters(prev.latitude, prev.longitude, next.latitude, next.longitude);
-          if (dPrev > 100 && dNext > 100 && dAcross < 50) {
+          if (dPrev > 100 && dNext > 100 && (dAcross < 100 || dAcross < Math.min(dPrev, dNext) * 0.25)) {
             continue; // 고립된 점프 제거
+          }
+        }
+        cleaned.push(curr);
+      }
+      return cleaned;
+    }
+
+    // 실시간 궤적 정제: 단발성 V자형 순간이동(수 km 점프 후 즉시 복귀) 필터링
+    function cleanLiveTrajectoryPoints(points) {
+      if (!points || points.length <= 2) return points || [];
+      const cleaned = [];
+      for (let i = 0; i < points.length; i++) {
+        const curr = points[i];
+        if (i > 0 && i < points.length - 1) {
+          const prev = points[i - 1];
+          const next = points[i + 1];
+          const dPrev = getDistanceMeters(prev.latitude, prev.longitude, curr.latitude, curr.longitude);
+          const dNext = getDistanceMeters(curr.latitude, curr.longitude, next.latitude, next.longitude);
+          const dAcross = getDistanceMeters(prev.latitude, prev.longitude, next.latitude, next.longitude);
+
+          // 1. 고립된 V자형 튐: 이전 및 다음과 각각 100m 이상 멀어지나 이전-다음 간격은 100m 이내
+          const isVSpike = (dPrev > 100 && dNext > 100 && (dAcross < 100 || dAcross < Math.min(dPrev, dNext) * 0.25));
+
+          // 2. 비현실적 순간이동 속도 (> 150 km/h) 튐 후 복귀
+          const dt1 = Math.max(1, ((curr.timestamp || 0) - (prev.timestamp || 0)) / 1000);
+          const dt2 = Math.max(1, ((next.timestamp || 0) - (curr.timestamp || 0)) / 1000);
+          const speed1 = (dPrev / dt1) * 3.6;
+          const speed2 = (dNext / dt2) * 3.6;
+          const isTeleportReturn = (speed1 > 150 || speed2 > 150) && (dAcross < 200);
+
+          if (isVSpike || isTeleportReturn) {
+            continue; // 가짜 순간이동 노이즈 제외
           }
         }
         cleaned.push(curr);
@@ -960,15 +992,16 @@
 
     // 실시간 궤적 세그먼트 분리 (정상 구간: 실선, 오차 50m 초과 저정밀 구간: 주황 점선, 15분 이상 공백: 분리)
     function buildLiveTrackSegments(points) {
-      if (!points || points.length === 0) return { solid: [], dashed: [] };
+      if (!points || points.length === 0) return { solid: [], dashed: [], cleanedPoints: [] };
+      const cleanedPoints = cleanLiveTrajectoryPoints(points);
       const solidSegments = [];
       const dashedSegments = [];
       let currentSolidSeg = [];
       let currentDashedSeg = [];
 
-      for (let i = 1; i < points.length; i++) {
-        const prev = points[i - 1];
-        const pt = points[i];
+      for (let i = 1; i < cleanedPoints.length; i++) {
+        const prev = cleanedPoints[i - 1];
+        const pt = cleanedPoints[i];
         const timeDiffMs = (pt.timestamp || 0) - (prev.timestamp || 0);
 
         // 15분 이상 공백 시 세그먼트 단절
@@ -1014,7 +1047,7 @@
       if (currentSolidSeg.length > 0) solidSegments.push(currentSolidSeg);
       if (currentDashedSeg.length > 0) dashedSegments.push(currentDashedSeg);
 
-      return { solid: solidSegments, dashed: dashedSegments };
+      return { solid: solidSegments, dashed: dashedSegments, cleanedPoints: cleanedPoints };
     }
 
     document.getElementById('btn-recenter').addEventListener('click', () => {
@@ -1423,10 +1456,11 @@
         const liveSegs = buildLiveTrackSegments(cachedAllPoints);
         polyline.setLatLngs(liveSegs.solid);
         lowAccPolyline.setLatLngs(liveSegs.dashed);
-        const latest = cachedAllPoints[cachedAllPoints.length - 1];
+        const validLivePts = (liveSegs.cleanedPoints && liveSegs.cleanedPoints.length > 0) ? liveSegs.cleanedPoints : cachedAllPoints;
+        const latest = validLivePts[validLivePts.length - 1];
         updateMapLocation(latest.latitude, latest.longitude, latest.accuracy);
-        if (cachedAllPoints.length > 1) {
-          map.fitBounds(L.latLngBounds(cachedAllPoints.map(p => [p.latitude, p.longitude])), { padding: [40, 40] });
+        if (validLivePts.length > 1) {
+          map.fitBounds(L.latLngBounds(validLivePts.map(p => [p.latitude, p.longitude])), { padding: [40, 40] });
         }
         document.getElementById('device-state-tag').innerHTML = 
           `수신 궤적: <strong style="color: #34d399">총 ${cachedAllPoints.length.toLocaleString()}개</strong> 📍 <span style="color: #64748b; margin: 0 4px;">|</span> 간격: <strong style="color: #fbbf24">이동 5초/정지 180초</strong>`;
@@ -1633,8 +1667,9 @@
           polyline.setLatLngs(liveSegs.solid);
           lowAccPolyline.setLatLngs(liveSegs.dashed);
 
-          // 가장 최신 위치
-          const latest = cachedAllPoints[cachedAllPoints.length - 1];
+          // 가장 최신 위치 (V-Spike 노이즈를 배제한 최신 유효 위치)
+          const validLivePts = (liveSegs.cleanedPoints && liveSegs.cleanedPoints.length > 0) ? liveSegs.cleanedPoints : cachedAllPoints;
+          const latest = validLivePts[validLivePts.length - 1];
           updateMapLocation(latest.latitude, latest.longitude, latest.accuracy);
 
           document.getElementById('val-speed').innerText = `${((latest.speed || 0) * 3.6).toFixed(1)} km/h`;

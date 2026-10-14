@@ -102,13 +102,28 @@ class StationaryAnchorManagerTest {
     }
 
     @Test
-    fun `하드웨어 모션 센서가 움직임(isMotionActive=true)을 감지하면 즉시 앵커가 해제된다`() {
-        val point = GpsPoint(37.5665, 126.9780, 10f, 0.2f, System.currentTimeMillis(), 80)
+    fun `하드웨어 모션 센서가 움직임(isMotionActive=true)을 감지해도 실제 이동 검증 전에는 앵커를 유지하여 가짜 순간이동을 방지한다`() {
+        val baseTime = System.currentTimeMillis()
+        val point = GpsPoint(37.5665, 126.9780, 10f, 0.2f, baseTime, 80)
         manager.processPoint(point, isMotionActive = false)
         assertTrue(manager.isStationaryConfirmed)
+        assertNotNull(manager.currentAnchor)
 
+        // 모션 센서가 움직임을 감지해도 앵커는 보존됨 (isStationaryConfirmed만 false)
         manager.updateMotionState(isMotionActive = true)
         assertFalse(manager.isStationaryConfirmed)
+        assertNotNull(manager.currentAnchor)
+
+        // 이때 4km 떨어진 가짜 좌표가 들어와도 속도가 0이면 앵커 좌표로 클램핑됨
+        val fakeJump = GpsPoint(37.6000, 126.9780, 40f, 0.0f, baseTime + 10_000, 80)
+        val result = manager.processPoint(fakeJump, isMotionActive = true)
+        assertTrue(result.isStationary)
+        assertEquals(37.5665, result.refinedPoint.latitude, 0.0001)
+
+        // 실제 보행 속도(2.0 m/s)로 유효 이동한 좌표가 들어오면 정상 탈출
+        val realMove = GpsPoint(37.5670, 126.9780, 10f, 2.0f, baseTime + 15_000, 80)
+        val moveResult = manager.processPoint(realMove, isMotionActive = true)
+        assertTrue(moveResult.isBreakout)
         assertNull(manager.currentAnchor)
     }
 

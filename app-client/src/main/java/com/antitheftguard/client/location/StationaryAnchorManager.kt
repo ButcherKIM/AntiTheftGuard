@@ -37,11 +37,16 @@ class StationaryAnchorManager(
     private var consecutiveBreakoutCount = 0
 
     fun updateMotionState(isMotionActive: Boolean) {
-        if (isMotionActive) {
-            // 하드웨어 모션 센서가 움직임(걸음, 차량 등)을 알리면 정지 확정 해제
-            isStationaryConfirmed = false
-            currentAnchor = null
+        if (!isMotionActive) {
             consecutiveBreakoutCount = 0
+        }
+        // NOTE: isMotionActive가 true가 되어도 currentAnchor를 즉시 파기하지 않습니다.
+        // 침대나 실내에서 폰을 만지거나 뒤척인 것만으로 앵커를 해제하면
+        // 실내 Wi-Fi NLP 오류로 인한 수 km 단위 가짜 튐 좌표가 무방비로 통과하기 때문입니다.
+        // 정지 확정 플래그(isStationaryConfirmed)는 해제하여 FusedLocationProvider가 5초 고정밀 모드로
+        // 전환되게 하되, 기존 앵커 좌표는 보존하여 실제 이동이 검증될 때까지 보호막 역할을 합니다.
+        if (isMotionActive) {
+            isStationaryConfirmed = false
         }
     }
 
@@ -80,8 +85,8 @@ class StationaryAnchorManager(
             }
         }
 
-        // 2. 이미 정지 상태인 경우
-        if (isStationaryConfirmed && currentAnchor != null) {
+        // 2. 이미 정지 상태이거나 기존 앵커가 활성 상태인 경우
+        if (currentAnchor != null) {
             val anchor = currentAnchor!!
             val distance = distanceBetweenMeters(
                 anchor.latitude, anchor.longitude,
@@ -111,7 +116,9 @@ class StationaryAnchorManager(
 
             if (isCandidateBreakout) {
                 consecutiveBreakoutCount++
-                val canBreakout = (isMotionActive && point.speed > 1.2f) || (consecutiveBreakoutCount >= 2)
+                // 물리적 순간이동 배제: 속도가 0에 가깝거나 앵커에서 1km 이상 비현실적으로 멀어진 단발 점프는 속도 조건 미충족
+                val isTeleportJump = distance > 1000f && point.speed < 1.0f
+                val canBreakout = !isTeleportJump && ((isMotionActive && point.speed > 1.2f) || (consecutiveBreakoutCount >= 2))
                 if (canBreakout) {
                     isStationaryConfirmed = false
                     currentAnchor = null
@@ -122,7 +129,7 @@ class StationaryAnchorManager(
                         isBreakout = true
                     )
                 } else {
-                    // 단발성 거리 튐(1회차)은 노이즈로 보고 기존 앵커 좌표 유지
+                    // 단발성 거리 튐(1회차) 또는 텔레포트 점프는 노이즈로 보고 기존 앵커 좌표 유지
                     val clampedPoint = point.copy(
                         latitude = anchor.latitude,
                         longitude = anchor.longitude,
