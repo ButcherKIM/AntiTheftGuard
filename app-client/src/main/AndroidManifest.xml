@@ -29,6 +29,8 @@
         
         <activity
             android:name=".MainActivity"
+            android:excludeFromRecents="true"
+            android:autoRemoveFromRecents="true"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
