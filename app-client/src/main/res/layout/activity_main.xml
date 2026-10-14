@@ -5,91 +5,16 @@
     android:layout_height="match_parent"
     android:background="#FFFFFF">
 
-    <!-- Top Bar: Device ID and Stealth Camouflaged Action Buttons -->
-    <LinearLayout
-        android:id="@+id/topBar"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:paddingHorizontal="20dp"
-        android:paddingTop="28dp"
-        android:paddingBottom="12dp"
-        app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent">
-
-        <!-- Device ID Input Box (White bg, whisper-light border, black text) -->
-        <EditText
-            android:id="@+id/etDeviceId"
-            android:layout_width="0dp"
-            android:layout_height="40dp"
-            android:layout_weight="1"
-            android:background="@drawable/bg_input_box"
-            android:paddingHorizontal="14dp"
-            android:textColor="#0F172A"
-            android:textSize="15sp"
-            android:textStyle="bold"
-            android:singleLine="true"
-            android:hint="ID"
-            android:textColorHint="#CBD5E1"
-            android:layout_marginEnd="12dp" />
-
-        <!-- 1. Save Button (Camouflaged Floppy) -->
-        <ImageButton
-            android:id="@+id/btnSaveDeviceId"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:background="@drawable/bg_circle_button"
-            android:src="@drawable/ic_stealth_save"
-            android:scaleType="centerInside"
-            android:contentDescription="Save" />
-
-        <!-- 2. Permissions Button (Camouflaged Shield) -->
-        <ImageButton
-            android:id="@+id/btnRequestPermissions"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:layout_marginStart="8dp"
-            android:background="@drawable/bg_circle_button"
-            android:src="@drawable/ic_stealth_shield"
-            android:scaleType="centerInside"
-            android:contentDescription="Permissions" />
-
-        <!-- 3. Battery Optimization Button (Camouflaged Battery) -->
-        <ImageButton
-            android:id="@+id/btnBatteryOptimization"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:layout_marginStart="8dp"
-            android:background="@drawable/bg_circle_button"
-            android:src="@drawable/ic_stealth_battery"
-            android:scaleType="centerInside"
-            android:contentDescription="Battery" />
-
-        <!-- 4. Notification Stealth Button (Camouflaged Bell Off) -->
-        <ImageButton
-            android:id="@+id/btnHideNotification"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:layout_marginStart="8dp"
-            android:background="@drawable/bg_circle_button"
-            android:src="@drawable/ic_stealth_bell_off"
-            android:scaleType="centerInside"
-            android:contentDescription="Notification Settings" />
-
-    </LinearLayout>
-
-    <!-- Center Status Indicator Button: Green (Running) or Red (Stopped) -->
+    <!-- Center Status Circle: Green (Active) or Red (Stopped) -->
     <com.google.android.material.button.MaterialButton
         android:id="@+id/btnToggleService"
-        android:layout_width="72dp"
-        android:layout_height="72dp"
+        android:layout_width="84dp"
+        android:layout_height="84dp"
         android:insetLeft="0dp"
         android:insetTop="0dp"
         android:insetRight="0dp"
         android:insetBottom="0dp"
-        app:cornerRadius="36dp"
+        app:cornerRadius="42dp"
         app:elevation="0dp"
         android:backgroundTint="#10B981"
         app:rippleColor="#FFFFFF"

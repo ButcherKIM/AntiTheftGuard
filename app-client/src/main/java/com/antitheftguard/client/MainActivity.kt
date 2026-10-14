@@ -11,7 +11,9 @@ import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
+import android.widget.EditText
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
@@ -33,8 +35,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 /**
- * 클라이언트 앱의 메인 액티비티입니다 (미니멀 스텔스 UI 적용).
- * 순백색 화면에 중앙 토글 원, 은폐형 상단 버튼, 하단 GPS 발신 시각만을 제공합니다.
+ * 클라이언트 앱의 메인 액티비티입니다 (초극강 스텔스 UI).
+ * 화면에는 오직 중앙 상태 원(초록/빨강)과 하단 타임스탬프만 존재합니다.
+ * 첫 실행 시 기기 ID 입력 팝업이 뜨며, 이후 중앙 원을 길게 누르면 기기 ID 수정이 가능합니다.
  */
 class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
@@ -49,6 +52,7 @@ class MainActivity : AppCompatActivity() {
         if (allGranted) {
             checkBackgroundLocationPermission()
             checkOverlayPermission()
+            requestBatteryOptimizationExemption()
         }
     }
 
@@ -60,12 +64,13 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        initDeviceId()
         setupListeners()
         updateServiceStatusUi()
         updateLastGpsSentUi(0L)
         observeServiceStatus()
         setupWorkers()
+
+        checkFirstLaunchDeviceId()
     }
 
     override fun onStart() {
@@ -94,6 +99,127 @@ class MainActivity : AppCompatActivity() {
         super.onStop()
         activityCommandListener?.remove()
         activityCommandListener = null
+    }
+
+    private fun checkFirstLaunchDeviceId() {
+        val prefs = getSharedPreferences("antitheft", Context.MODE_PRIVATE)
+        val hasConfigured = prefs.getBoolean("has_configured_device_id", false)
+        val currentId = prefs.getString("device_id", "") ?: ""
+
+        if (!hasConfigured || currentId.isEmpty()) {
+            showDeviceIdDialog(isFirstLaunch = true)
+        } else {
+            registerDeviceToFirestore(currentId)
+        }
+    }
+
+    private fun showDeviceIdDialog(isFirstLaunch: Boolean) {
+        val prefs = getSharedPreferences("antitheft", Context.MODE_PRIVATE)
+        val currentId = prefs.getString("device_id", "") ?: ""
+        val defaultId = if (currentId.isNotEmpty()) currentId else {
+            val sanitized = Build.MODEL.replace("[^a-zA-Z0-9_-]".toRegex(), "_").lowercase()
+            "phone_$sanitized"
+        }
+
+        val input = EditText(this).apply {
+            setText(defaultId)
+            setSelection(text.length)
+            setTextColor(0xFF0F172A.toInt())
+            textSize = 16f
+            setPadding(60, 40, 60, 40)
+            isSingleLine = true
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("기기 ID 설정")
+            .setMessage("대시보드와 연결할 고유 기기 ID를 입력해 주세요.")
+            .setView(input)
+            .setCancelable(!isFirstLaunch)
+            .setPositiveButton("저장") { _, _ ->
+                val entered = input.text.toString().trim()
+                val finalId = if (entered.isNotEmpty()) entered else defaultId
+                prefs.edit()
+                    .putString("device_id", finalId)
+                    .putBoolean("has_configured_device_id", true)
+                    .apply()
+                registerDeviceToFirestore(finalId)
+
+                if (isFirstLaunch) {
+                    requestRequiredPermissions()
+                    // 최초 설정 시 서비스 자동 활성화
+                    if (!GpsLoggingService.isRunning) {
+                        toggleGpsService()
+                    }
+                } else if (GpsLoggingService.isRunning) {
+                    val serviceIntent = Intent(this, GpsLoggingService::class.java)
+                    stopService(serviceIntent)
+                    ContextCompat.startForegroundService(this, serviceIntent)
+                }
+            }
+            .apply {
+                if (!isFirstLaunch) {
+                    setNegativeButton("취소", null)
+                }
+            }
+            .show()
+    }
+
+    private fun setupListeners() {
+        // 중앙 상태 원 터치 시: 추적 시작 / 중지 토글 (초록 <-> 빨강)
+        binding.btnToggleService.setOnClickListener {
+            toggleGpsService()
+        }
+
+        // 중앙 상태 원 롱클릭 시: 기기 ID 수정 비밀 다이얼로그 오픈
+        binding.btnToggleService.setOnLongClickListener {
+            showDeviceIdDialog(isFirstLaunch = false)
+            true
+        }
+    }
+
+    private fun toggleGpsService() {
+        val prefs = getSharedPreferences("antitheft", Context.MODE_PRIVATE)
+        val shouldRun = prefs.getBoolean("is_service_running", false)
+        val isRunning = GpsLoggingService.isRunning || shouldRun
+        val serviceIntent = Intent(this, GpsLoggingService::class.java)
+
+        if (!isRunning) {
+            val currentId = prefs.getString("device_id", "") ?: ""
+            if (currentId.isEmpty()) {
+                showDeviceIdDialog(isFirstLaunch = true)
+                return
+            }
+
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) 
+                != PackageManager.PERMISSION_GRANTED) {
+                requestRequiredPermissions()
+                return
+            }
+
+            prefs.edit().putBoolean("is_service_running", true).apply()
+            GpsLoggingService.isRunning = true
+
+            serviceIntent.action = GpsLoggingService.ACTION_SEND_IMMEDIATE_GPS
+            ContextCompat.startForegroundService(this, serviceIntent)
+            updateServiceStatusUi()
+        } else {
+            stopService(serviceIntent)
+            prefs.edit().putBoolean("is_service_running", false).apply()
+            GpsLoggingService.isRunning = false
+            updateServiceStatusUi()
+        }
+    }
+
+    private fun updateServiceStatusUi() {
+        val shouldRun = getSharedPreferences("antitheft", Context.MODE_PRIVATE)
+            .getBoolean("is_service_running", false)
+        val isRunning = GpsLoggingService.isRunning || shouldRun
+
+        if (isRunning) {
+            binding.btnToggleService.backgroundTintList = ColorStateList.valueOf(0xFF10B981.toInt()) // Green
+        } else {
+            binding.btnToggleService.backgroundTintList = ColorStateList.valueOf(0xFFEF4444.toInt()) // Red
+        }
     }
 
     private fun observeServiceStatus() {
@@ -125,18 +251,6 @@ class MainActivity : AppCompatActivity() {
             binding.tvLastGpsSent.text = timeFormat.format(Date(effectiveTime))
         } else {
             binding.tvLastGpsSent.text = ""
-        }
-    }
-
-    private fun updateServiceStatusUi() {
-        val shouldRun = getSharedPreferences("antitheft", Context.MODE_PRIVATE)
-            .getBoolean("is_service_running", false)
-        val isRunning = GpsLoggingService.isRunning || shouldRun
-
-        if (isRunning) {
-            binding.btnToggleService.backgroundTintList = ColorStateList.valueOf(0xFF10B981.toInt()) // Green
-        } else {
-            binding.btnToggleService.backgroundTintList = ColorStateList.valueOf(0xFFEF4444.toInt()) // Red
         }
     }
 
@@ -181,121 +295,6 @@ class MainActivity : AppCompatActivity() {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         }
         startActivity(streamIntent)
-    }
-
-    private fun initDeviceId() {
-        val prefs = getSharedPreferences("antitheft", Context.MODE_PRIVATE)
-        var deviceId = prefs.getString("device_id", "") ?: ""
-
-        if (deviceId.isEmpty()) {
-            val sanitizedModel = Build.MODEL.replace("[^a-zA-Z0-9_-]".toRegex(), "_").lowercase()
-            deviceId = "phone_${sanitizedModel}"
-            prefs.edit().putString("device_id", deviceId).apply()
-        }
-
-        binding.etDeviceId.setText(deviceId)
-        registerDeviceToFirestore(deviceId)
-    }
-
-    private fun setupListeners() {
-        // 기기 ID 저장 버튼 (소리 없는 저장 및 리플)
-        binding.btnSaveDeviceId.setOnClickListener {
-            val newId = binding.etDeviceId.text.toString().trim()
-            if (newId.isNotEmpty()) {
-                getSharedPreferences("antitheft", Context.MODE_PRIVATE)
-                    .edit().putString("device_id", newId).apply()
-                registerDeviceToFirestore(newId)
-
-                // 서비스가 실행 중이라면 새 ID로 즉시 갱신
-                if (GpsLoggingService.isRunning) {
-                    val serviceIntent = Intent(this, GpsLoggingService::class.java)
-                    stopService(serviceIntent)
-                    ContextCompat.startForegroundService(this, serviceIntent)
-                }
-            }
-        }
-
-        // 중앙 상태 원 터치 시: 추적 시작 / 중지 토글 (초록 <-> 빨강)
-        binding.btnToggleService.setOnClickListener {
-            toggleGpsService()
-        }
-
-        // 필수 권한 요청 버튼
-        binding.btnRequestPermissions.setOnClickListener {
-            requestRequiredPermissions()
-        }
-
-        // 배터리 최적화 예외 등록 버튼
-        binding.btnBatteryOptimization.setOnClickListener {
-            requestBatteryOptimizationExemption()
-        }
-
-        // 상단 지속 알림 끄기 설정 바로가기
-        binding.btnHideNotification.setOnClickListener {
-            openNotificationSettings()
-        }
-    }
-
-    private fun toggleGpsService() {
-        val prefs = getSharedPreferences("antitheft", Context.MODE_PRIVATE)
-        val shouldRun = prefs.getBoolean("is_service_running", false)
-        val isRunning = GpsLoggingService.isRunning || shouldRun
-        val serviceIntent = Intent(this, GpsLoggingService::class.java)
-
-        if (!isRunning) {
-            val currentInputId = binding.etDeviceId.text.toString().trim()
-            if (currentInputId.isNotEmpty()) {
-                prefs.edit().putString("device_id", currentInputId).apply()
-                registerDeviceToFirestore(currentInputId)
-            }
-
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) 
-                != PackageManager.PERMISSION_GRANTED) {
-                requestRequiredPermissions()
-                return
-            }
-
-            prefs.edit().putBoolean("is_service_running", true).apply()
-            GpsLoggingService.isRunning = true
-
-            serviceIntent.action = GpsLoggingService.ACTION_SEND_IMMEDIATE_GPS
-            ContextCompat.startForegroundService(this, serviceIntent)
-            updateServiceStatusUi()
-        } else {
-            stopService(serviceIntent)
-            prefs.edit().putBoolean("is_service_running", false).apply()
-            GpsLoggingService.isRunning = false
-            updateServiceStatusUi()
-        }
-    }
-
-    private fun openNotificationSettings() {
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                val intent = Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS).apply {
-                    putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
-                    putExtra(Settings.EXTRA_CHANNEL_ID, GpsLoggingService.CHANNEL_ID)
-                }
-                startActivity(intent)
-            } else {
-                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                    data = Uri.parse("package:$packageName")
-                }
-                startActivity(intent)
-            }
-        } catch (_: Exception) {
-            try {
-                val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
-                    putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
-                }
-                startActivity(intent)
-            } catch (_: Exception) {
-                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                    data = Uri.parse("package:$packageName")
-                }
-                startActivity(intent)
-            }
-        }
     }
 
     private fun requestRequiredPermissions() {
