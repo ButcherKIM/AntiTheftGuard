@@ -254,9 +254,9 @@ class GpsLoggingService : Service() {
                 stationaryAnchorManager.processPoint(rawPoint, isMotionActive).refinedPoint
             }
 
-            // 최종 정제된 포인트도 50m 초과 시 발신 배제
-            if (point.accuracy > 50f) {
-                Log.d(TAG, "즉시 발신 스킵: 정제된 포인트 오차 초과 (accuracy=${point.accuracy}m > 50m)")
+            // 최종 정제된 포인트도 100m 초과 시 발신 배제
+            if (point.accuracy > 100f) {
+                Log.d(TAG, "즉시 발신 스킵: 정제된 포인트 오차 초과 (accuracy=${point.accuracy}m > 100m)")
                 return@launch
             }
 

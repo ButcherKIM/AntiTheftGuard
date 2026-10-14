@@ -81,8 +81,8 @@ class DailyRollupWorker(
                 if (!isAlreadyDone) {
                     val points = gpsDao.getPointsBetween(startOfDay, endOfDay)
                     if (points.isNotEmpty()) {
-                        // 1. 오차가 큰 기지국/NLP 거친 좌표(> 50m) 필터링
-                        val validPoints = points.filter { it.accuracy in 0.1f..50f }
+                        // 1. 오차가 큰 기지국/NLP 거친 좌표(> 100m) 필터링
+                        val validPoints = points.filter { it.accuracy in 0.1f..100f }
                         val rawGpsPoints = validPoints.map { entity ->
                             GpsPoint(
                                 latitude = entity.lat,

@@ -63,9 +63,9 @@ class StationaryAnchorManager(
 
         val areRecentSpeedsLow = recentSpeeds.isNotEmpty() && recentSpeeds.all { it < 1.2f }
 
-        // 1. 이중 정지 확정: 모션 센서 STILL(false) + 최근 GPS 속도 모두 안정 + 유효한 오차(<= 50m)
+        // 1. 이중 정지 확정: 모션 센서 STILL(false) + 최근 GPS 속도 모두 안정 + 유효한 오차(<= 100m)
         if (!isMotionActive && areRecentSpeedsLow && !isStationaryConfirmed) {
-            if (point.accuracy <= 50f) {
+            if (point.accuracy <= 100f) {
                 isStationaryConfirmed = true
                 consecutiveBreakoutCount = 0
                 currentAnchor = Anchor(
@@ -93,8 +93,8 @@ class StationaryAnchorManager(
                 point.latitude, point.longitude
             )
 
-            // 신뢰할 수 없는 거친 오차(> 50m, 예: 기지국 200m)는 탈출이나 앵커 갱신에 사용하지 않고 기존 앵커로 강제 고정
-            if (point.accuracy > 50f) {
+            // 신뢰할 수 없는 거친 오차(> 100m, 예: 기지국 200m)는 탈출이나 앵커 갱신에 사용하지 않고 기존 앵커로 강제 고정
+            if (point.accuracy > 100f) {
                 val clampedPoint = point.copy(
                     latitude = anchor.latitude,
                     longitude = anchor.longitude,
@@ -110,9 +110,9 @@ class StationaryAnchorManager(
 
             // A. 탈출(Breakout) 판정:
             // - 모션 센서가 활성화(isMotionActive)되어 있고 거리가 벗어났거나,
-            // - 또는 거리가 100m 이상 멀어진 상태가 연속 2회 이상 고정밀도(accuracy <= 35m)로 유지될 때만 탈출
+            // - 또는 거리가 100m 이상 멀어진 상태가 연속 2회 이상 유효 정밀도(accuracy <= 70m)로 유지될 때만 탈출
             val isCandidateBreakout = (isMotionActive && distance > anchorRadiusMeters) ||
-                    (distance > breakoutDistanceMeters && point.accuracy <= 35f)
+                    (distance > breakoutDistanceMeters && point.accuracy <= 70f)
 
             if (isCandidateBreakout) {
                 consecutiveBreakoutCount++

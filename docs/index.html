@@ -854,8 +854,8 @@
 
     let phoneMarker = null;
     let accuracyCircle = null;
-    let polyline = L.polyline([], { color: '#3b82f6', weight: 4, opacity: 0.85 }).addTo(map);
-    let lowAccPolyline = L.polyline([], { color: '#f59e0b', weight: 2, opacity: 0.8, dashArray: '5, 7' }).addTo(map);
+    let polyline = L.polyline([], { color: '#3b82f6', weight: 3, opacity: 0.85 }).addTo(map);
+    let lowAccPolyline = L.polyline([], { color: '#f59e0b', weight: 1.5, opacity: 0.8, dashArray: '4, 6' }).addTo(map);
     let pathCoordinates = [];
     let hasAutoCentered = false;
 
@@ -872,7 +872,7 @@
 
     function updateMapLocation(lat, lng, accuracy) {
       const latlng = [lat, lng];
-      const isLowAcc = accuracy && accuracy > 50;
+      const isLowAcc = accuracy && accuracy > 100;
       const circleColor = isLowAcc ? '#f59e0b' : '#3b82f6';
 
       if (!phoneMarker) {
@@ -917,11 +917,11 @@
       return R * c;
     }
 
-    // 오차가 큰 기지국/NLP 좌표(> 50m) 및 단발성 V자 좌표 튐 노이즈 필터링 (과거 일별 롤업용)
+    // 오차가 큰 기지국/NLP 좌표(> 100m) 및 단발성 V자 좌표 튐 노이즈 필터링 (과거 일별 롤업용)
     function cleanTrajectoryPoints(points) {
       if (!points || points.length === 0) return [];
-      // 1. 오차 50m 초과(기지국/NLP 추정치) 제거
-      const valid = points.filter(p => (p.accuracy == null || p.accuracy <= 50));
+      // 1. 오차 100m 초과(기지국/NLP 거친 추정치) 제거
+      const valid = points.filter(p => (p.accuracy == null || p.accuracy <= 100));
       if (valid.length <= 2) return valid;
 
       // 2. 단발성 V자형 좌표 튐 제거 (이전/다음과 각각 100m 이상 멀어지나 이전-다음 간격은 100m 이내 또는 비율 낮음)
@@ -943,12 +943,17 @@
       return cleaned;
     }
 
-    // 실시간 궤적 정제: 단발성 V자형 순간이동(수 km 점프 후 즉시 복귀) 필터링
+    // 실시간 궤적 정제: 극단적 기지국 이상치 및 단발성 V자형 순간이동 필터링
     function cleanLiveTrajectoryPoints(points) {
       if (!points || points.length <= 2) return points || [];
       const cleaned = [];
       for (let i = 0; i < points.length; i++) {
         const curr = points[i];
+        // 극단적 오차 (> 300m, 기지국 레벨 이상치) 배제
+        if (curr.accuracy != null && curr.accuracy > 300) {
+          continue;
+        }
+
         if (i > 0 && i < points.length - 1) {
           const prev = points[i - 1];
           const next = points[i + 1];
@@ -998,7 +1003,7 @@
       return segments;
     }
 
-    // 실시간 궤적 세그먼트 분리 (정상 구간: 실선, 오차 50m 초과 저정밀 구간: 주황 점선, 15분 이상 공백: 분리)
+    // 실시간 궤적 세그먼트 분리 (정상 구간: 실선, 오차 100m 초과 저정밀 구간: 주황 점선, 15분 이상 공백: 분리)
     function buildLiveTrackSegments(points) {
       if (!points || points.length === 0) return { solid: [], dashed: [], cleanedPoints: [] };
       const cleanedPoints = cleanLiveTrajectoryPoints(points);
@@ -1027,7 +1032,7 @@
 
         const prevLatLng = [prev.latitude, prev.longitude];
         const currLatLng = [pt.latitude, pt.longitude];
-        const isLowAcc = (prev.accuracy != null && prev.accuracy > 50) || (pt.accuracy != null && pt.accuracy > 50);
+        const isLowAcc = (pt.accuracy != null && pt.accuracy > 100);
 
         if (isLowAcc) {
           if (currentSolidSeg.length > 0) {
@@ -1380,8 +1385,8 @@
               const nextTime = new Date(pt.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
               const gapLine = L.polyline([[prev.latitude, prev.longitude], [pt.latitude, pt.longitude]], {
                 color: '#94a3b8',
-                weight: 2,
-                dashArray: '6, 8',
+                weight: 1.5,
+                dashArray: '5, 7',
                 opacity: 0.65
               }).addTo(map).bindPopup(
                 `<b>⚠️ 신호 단절 구간</b><br>` +
@@ -1706,7 +1711,7 @@
           updateMapLocation(latest.latitude, latest.longitude, latest.accuracy);
 
           document.getElementById('val-speed').innerText = `${((latest.speed || 0) * 3.6).toFixed(1)} km/h`;
-          if (latest.accuracy != null && latest.accuracy > 50) {
+          if (latest.accuracy != null && latest.accuracy > 100) {
             document.getElementById('val-accuracy').innerHTML = `<span style="color: #f59e0b; font-weight: 700;">±${Math.round(latest.accuracy)} m <small>(저정밀/점선)</small></span>`;
           } else {
             document.getElementById('val-accuracy').innerText = `±${Math.round(latest.accuracy || 0)} m`;
