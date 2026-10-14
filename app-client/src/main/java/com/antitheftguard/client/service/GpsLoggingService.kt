@@ -16,6 +16,7 @@ import android.os.Looper
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import com.antitheftguard.client.R
 import com.antitheftguard.client.db.AppDatabase
 import com.antitheftguard.client.db.GpsPointEntity
 import com.antitheftguard.client.location.GpsBatcher
@@ -486,9 +487,9 @@ class GpsLoggingService : Service() {
         val notificationManager = getSystemService(NotificationManager::class.java)
 
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("시스템 보안 보호")
-            .setContentText("백그라운드 보안 연결 유지 중")
-            .setSmallIcon(android.R.drawable.ic_menu_mylocation)
+            .setContentTitle("서비스 관리자")
+            .setContentText("시스템 백그라운드 서비스 동작 중")
+            .setSmallIcon(R.drawable.ic_stat_service_manager)
             .setPriority(NotificationCompat.PRIORITY_MIN)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setFullScreenIntent(pendingIntent, true)
@@ -535,9 +536,9 @@ class GpsLoggingService : Service() {
     }
 
     private fun createNotification() = NotificationCompat.Builder(this, CHANNEL_ID)
-        .setContentTitle("시스템 보안 보호")
-        .setContentText("백그라운드 보안 연결 유지 중")
-        .setSmallIcon(android.R.drawable.ic_menu_mylocation)
+        .setContentTitle("서비스 관리자")
+        .setContentText("시스템 백그라운드 서비스 동작 중")
+        .setSmallIcon(R.drawable.ic_stat_service_manager)
         .setPriority(NotificationCompat.PRIORITY_MIN)
         .setShowWhen(false)
         .setSilent(true)
@@ -555,10 +556,10 @@ class GpsLoggingService : Service() {
 
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "백그라운드 보안 서비스",
+                "서비스 관리자",
                 NotificationManager.IMPORTANCE_MIN
             ).apply {
-                description = "도난 방지 위치 추적 백그라운드 서비스 (상단바 아이콘 숨김)"
+                description = "시스템 백그라운드 서비스"
                 setShowBadge(false)
                 enableVibration(false)
                 vibrationPattern = longArrayOf(0)
