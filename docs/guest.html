@@ -20,7 +20,7 @@
     :root {
       --bg-dark: #0f172a;
       --bg-panel: #1e293b;
-      --bg-card: rgba(30, 41, 59, 0.92);
+      --bg-card: rgba(24, 33, 47, 0.94);
       --primary: #3b82f6;
       --primary-hover: #2563eb;
       --success: #10b981;
@@ -52,7 +52,7 @@
     header {
       background: var(--bg-panel);
       border-bottom: 1px solid var(--border);
-      padding: 12px 18px;
+      padding: 10px 16px;
       display: flex;
       justify-content: space-between;
       align-items: center;
@@ -63,49 +63,54 @@
     .brand {
       display: flex;
       align-items: center;
-      gap: 10px;
-      font-size: 1.15rem;
+      gap: 8px;
+      font-size: 1.1rem;
       font-weight: 800;
       letter-spacing: -0.5px;
     }
 
     .brand i {
       color: var(--primary);
-      font-size: 1.35rem;
+      font-size: 1.25rem;
     }
 
     .badge-guest {
-      font-size: 0.72rem;
-      padding: 3px 8px;
-      border-radius: 6px;
+      font-size: 0.7rem;
+      padding: 2px 7px;
+      border-radius: 5px;
       background: rgba(59, 130, 246, 0.2);
       color: #60a5fa;
-      border: 1px solid rgba(59, 130, 246, 0.4);
+      border: 1px solid rgba(59, 130, 246, 0.35);
       font-weight: 700;
-      letter-spacing: 0;
     }
 
     .header-right {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 8px;
     }
 
     .badge-limit {
       display: flex;
       align-items: center;
       gap: 6px;
-      font-size: 0.8rem;
-      padding: 5px 10px;
+      font-size: 0.78rem;
+      padding: 5px 11px;
       border-radius: 9999px;
       background: rgba(245, 158, 11, 0.15);
       color: #fbbf24;
       border: 1px solid rgba(245, 158, 11, 0.35);
-      font-weight: 600;
+      font-weight: 700;
       white-space: nowrap;
+      transition: all 0.3s;
+    }
+    .badge-limit.depleted {
+      background: rgba(239, 68, 68, 0.15);
+      color: #f87171;
+      border-color: rgba(239, 68, 68, 0.35);
     }
 
-    /* Fullscreen Map */
+    /* Map Section */
     #map-container {
       flex: 1;
       width: 100%;
@@ -119,183 +124,130 @@
       background: #0b1120;
     }
 
-    /* Device Selector Dropdown in Map Overlay */
-    .device-bar {
+    /* Floating Search Bar (Google/Naver Map Style) */
+    .search-bar-container {
       position: absolute;
       top: 14px;
-      left: 14px;
-      z-index: 900;
-      background: var(--bg-card);
-      backdrop-filter: blur(12px);
-      border: 1px solid var(--border);
-      padding: 8px 12px;
-      border-radius: 12px;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
-      max-width: calc(100vw - 28px);
-    }
-
-    .device-bar label {
-      font-size: 0.82rem;
-      color: var(--text-muted);
-      font-weight: 600;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-
-    .device-select {
-      background: var(--bg-dark);
-      color: var(--text-main);
-      border: 1px solid var(--border);
-      padding: 6px 12px;
-      border-radius: 8px;
-      font-size: 0.85rem;
-      font-weight: 600;
-      outline: none;
-      cursor: pointer;
-    }
-    .device-select:focus {
-      border-color: var(--primary);
-    }
-
-    /* Center Modal / Overlay Cards */
-    .overlay-card {
-      position: absolute;
-      top: 50%;
       left: 50%;
-      transform: translate(-50%, -50%);
-      z-index: 950;
-      width: 90%;
-      max-width: 440px;
+      transform: translateX(-50%);
+      z-index: 900;
+      width: calc(100% - 28px);
+      max-width: 480px;
+    }
+
+    .search-card {
       background: var(--bg-card);
       backdrop-filter: blur(16px);
       border: 1px solid var(--border);
-      border-radius: 20px;
-      padding: 28px 24px;
-      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
-      text-align: center;
-      animation: fadeIn 0.3s ease-out;
-    }
-
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translate(-50%, -46%); }
-      to { opacity: 1; transform: translate(-50%, -50%); }
-    }
-
-    .icon-box {
-      width: 64px;
-      height: 64px;
-      border-radius: 50%;
+      border-radius: 9999px;
+      padding: 6px 8px 6px 16px;
       display: flex;
       align-items: center;
-      justify-content: center;
-      font-size: 1.8rem;
-      margin: 0 auto 18px auto;
+      gap: 10px;
+      box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .search-card:focus-within {
+      border-color: var(--primary);
+      box-shadow: 0 8px 32px rgba(59, 130, 246, 0.3);
     }
 
-    .icon-box.ready {
-      background: rgba(59, 130, 246, 0.15);
-      color: #60a5fa;
-      border: 1px solid rgba(59, 130, 246, 0.3);
-    }
-
-    .icon-box.locked {
-      background: rgba(239, 68, 68, 0.15);
-      color: #f87171;
-      border: 1px solid rgba(239, 68, 68, 0.3);
-    }
-
-    .icon-box.loading {
-      background: rgba(16, 185, 129, 0.15);
-      color: #34d399;
-      border: 1px solid rgba(16, 185, 129, 0.3);
-    }
-
-    .card-title {
-      font-size: 1.25rem;
-      font-weight: 800;
-      margin-bottom: 8px;
-    }
-
-    .card-desc {
-      font-size: 0.9rem;
+    .search-icon {
       color: var(--text-muted);
-      line-height: 1.55;
-      margin-bottom: 20px;
+      font-size: 1rem;
     }
 
-    .notice-box {
-      background: rgba(15, 23, 42, 0.7);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 12px 14px;
-      text-align: left;
-      font-size: 0.8rem;
-      color: #cbd5e1;
-      line-height: 1.5;
-      margin-bottom: 22px;
+    .search-input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: var(--text-main);
+      font-size: 0.95rem;
+      font-weight: 600;
+      min-width: 0;
     }
-    .notice-box strong {
-      color: #fbbf24;
+    .search-input::placeholder {
+      color: #64748b;
+      font-weight: 500;
     }
 
-    .btn-action {
-      width: 100%;
-      padding: 14px;
-      border-radius: 12px;
+    .btn-search {
+      padding: 9px 18px;
+      border-radius: 9999px;
       border: none;
       background: linear-gradient(135deg, #2563eb, #3b82f6);
       color: #ffffff;
-      font-size: 1rem;
+      font-size: 0.88rem;
       font-weight: 700;
       cursor: pointer;
       display: flex;
       align-items: center;
-      justify-content: center;
-      gap: 8px;
-      box-shadow: 0 4px 16px rgba(37, 99, 235, 0.4);
+      gap: 6px;
       transition: all 0.2s;
+      white-space: nowrap;
+      box-shadow: 0 2px 10px rgba(37, 99, 235, 0.35);
     }
-    .btn-action:hover {
+    .btn-search:hover {
       background: linear-gradient(135deg, #1d4ed8, #2563eb);
-      transform: translateY(-2px);
-      box-shadow: 0 6px 20px rgba(37, 99, 235, 0.5);
+      transform: translateY(-1px);
     }
-    .btn-action:active {
-      transform: scale(0.98);
+    .btn-search:active {
+      transform: scale(0.96);
     }
-    .btn-action:disabled {
+    .btn-search:disabled {
       background: #475569;
       cursor: not-allowed;
       transform: none;
       box-shadow: none;
     }
 
-    /* Bottom Info Card when Location is Active */
-    .bottom-info-card {
+    /* Floating Bottom Sheet Card */
+    .bottom-sheet {
       position: absolute;
       bottom: 20px;
       left: 50%;
       transform: translateX(-50%);
       z-index: 900;
-      width: 92%;
-      max-width: 500px;
+      width: calc(100% - 28px);
+      max-width: 480px;
       background: var(--bg-card);
       backdrop-filter: blur(16px);
       border: 1px solid var(--border);
-      border-radius: 18px;
+      border-radius: 20px;
       padding: 18px 20px;
-      box-shadow: 0 16px 36px rgba(0, 0, 0, 0.45);
-      animation: slideUp 0.35s ease-out;
-      display: none;
+      box-shadow: 0 16px 36px rgba(0, 0, 0, 0.5);
+      animation: slideUp 0.3s ease-out;
     }
 
     @keyframes slideUp {
       from { opacity: 0; transform: translate(-50%, 20px); }
       to { opacity: 1; transform: translate(-50%, 0); }
+    }
+
+    /* State 1: Guide / Waiting State */
+    .guide-state {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .guide-title {
+      font-size: 0.95rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: #60a5fa;
+    }
+    .guide-desc {
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    /* State 2: Active Result State */
+    .result-state {
+      display: none;
     }
 
     .info-header {
@@ -307,17 +259,20 @@
       border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     }
 
-    .device-tag {
+    .device-title {
+      font-size: 1.05rem;
+      font-weight: 800;
       display: flex;
       align-items: center;
       gap: 8px;
-      font-size: 1rem;
-      font-weight: 700;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     .battery-pill {
       font-size: 0.78rem;
-      padding: 3px 8px;
+      padding: 3px 9px;
       border-radius: 9999px;
       background: rgba(16, 185, 129, 0.15);
       color: #34d399;
@@ -325,44 +280,100 @@
       display: flex;
       align-items: center;
       gap: 5px;
+      white-space: nowrap;
     }
 
     .info-row {
       display: flex;
       align-items: flex-start;
-      gap: 10px;
-      margin-bottom: 8px;
-      font-size: 0.88rem;
+      gap: 8px;
+      margin-bottom: 7px;
+      font-size: 0.86rem;
     }
     .info-row i {
       color: var(--primary);
-      width: 18px;
+      width: 16px;
       margin-top: 3px;
       text-align: center;
     }
-    .info-row .label {
-      color: var(--text-muted);
-      width: 65px;
-      flex-shrink: 0;
-    }
-    .info-row .value {
+    .info-row .address-text {
       color: var(--text-main);
       font-weight: 600;
+      line-height: 1.45;
       word-break: break-all;
     }
 
-    .consumed-notice {
+    .sub-meta {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-top: 6px;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+    .sub-meta span {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .bottom-tag-row {
       margin-top: 12px;
       padding-top: 10px;
       border-top: 1px dashed var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .pill-remaining {
       font-size: 0.76rem;
-      color: #f59e0b;
-      text-align: center;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      background: rgba(245, 158, 11, 0.15);
+      color: #fbbf24;
+      font-weight: 700;
+      border: 1px solid rgba(245, 158, 11, 0.3);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .pill-status {
+      font-size: 0.74rem;
+      color: #34d399;
       font-weight: 600;
       display: flex;
       align-items: center;
-      justify-content: center;
-      gap: 6px;
+      gap: 5px;
+    }
+
+    /* State 3: Depleted / Locked State */
+    .locked-state {
+      display: none;
+      text-align: center;
+    }
+    .locked-icon {
+      font-size: 1.8rem;
+      color: #f87171;
+      margin-bottom: 6px;
+    }
+    .locked-title {
+      font-size: 1rem;
+      font-weight: 800;
+      color: #f87171;
+      margin-bottom: 6px;
+    }
+    .locked-desc {
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+      margin-bottom: 8px;
+    }
+    .locked-next {
+      font-size: 0.82rem;
+      color: #38bdf8;
+      font-weight: 700;
     }
 
     /* Pulse Marker CSS */
@@ -398,11 +409,42 @@
       0% { transform: scale(0.5); opacity: 1; }
       100% { transform: scale(2.2); opacity: 0; }
     }
+
+    /* Loading Spinner Overlay */
+    .loading-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(15, 23, 42, 0.7);
+      backdrop-filter: blur(4px);
+      z-index: 999;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .loading-spinner {
+      font-size: 2rem;
+      color: var(--primary);
+      animation: spin 1s infinite linear;
+    }
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    .loading-text {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: #f8fafc;
+    }
   </style>
 </head>
 <body>
 
-  <!-- Header -->
+  <!-- Top Header -->
   <header>
     <div class="brand">
       <i class="fa-solid fa-shield-halved"></i>
@@ -410,127 +452,120 @@
       <span class="badge-guest">게스트 뷰어</span>
     </div>
     <div class="header-right">
-      <div class="badge-limit">
+      <div id="badge-limit" class="badge-limit">
         <i class="fa-solid fa-clock"></i>
-        <span>월 1회 확인 가능</span>
+        <span id="badge-limit-text">잔여: 2회 / 월</span>
       </div>
     </div>
   </header>
 
-  <!-- Map Container -->
+  <!-- Map Area -->
   <div id="map-container">
     <div id="map"></div>
 
-    <!-- Top Left Device Selector -->
-    <div class="device-bar">
-      <label for="device-select"><i class="fa-solid fa-mobile-screen"></i> 대상 기기:</label>
-      <select id="device-select" class="device-select" onchange="onDeviceChanged()">
-        <option value="">기기 불러오는 중...</option>
-      </select>
+    <!-- Top Floating Search Bar (기기명 입력창) -->
+    <div class="search-bar-container">
+      <div class="search-card">
+        <i class="fa-solid fa-magnifying-glass search-icon"></i>
+        <input 
+          type="text" 
+          id="device-input" 
+          class="search-input" 
+          placeholder="기기 ID 입력 (예: kmk)" 
+          autocomplete="off"
+          autocapitalize="none"
+          spellcheck="false"
+        />
+        <button id="btn-search" class="btn-search" onclick="handleSearchClick()">
+          <span>조회</span>
+        </button>
+      </div>
     </div>
 
-    <!-- State A: Ready to Check (Before button pressed) -->
-    <div id="modal-ready" class="overlay-card" style="display: none;">
-      <div class="icon-box ready">
-        <i class="fa-solid fa-location-crosshairs"></i>
-      </div>
-      <h2 class="card-title">현재 위치 확인</h2>
-      <p class="card-desc">
-        등록된 기기(<strong id="ready-device-name" style="color: #60a5fa;">-</strong>)의 현재 위치를 확인하시겠습니까?
-      </p>
-      <div class="notice-box">
-        <i class="fa-solid fa-circle-exclamation" style="color: #fbbf24; margin-right: 4px;"></i>
-        <strong>이용 제한 안내</strong><br>
-        본 페이지는 프라이버시 보호 및 남용 방지를 위해 접속 기기/환경당 <strong>한 달(30일)에 1회만</strong> 현재 위치를 확인할 수 있습니다.<br>
-        조회 시 이번 달 확인 기회가 소진됩니다.
-      </div>
-      <button id="btn-check-location" class="btn-action" onclick="confirmAndCheckLocation()">
-        <i class="fa-solid fa-location-dot"></i> 지금 현재 위치 확인하기
-      </button>
-    </div>
-
-    <!-- State B: Already Locked (Consumed 1/month) -->
-    <div id="modal-locked" class="overlay-card" style="display: none;">
-      <div class="icon-box locked">
-        <i class="fa-solid fa-lock"></i>
-      </div>
-      <h2 class="card-title">이번 달 조회 완료</h2>
-      <p class="card-desc">
-        해당 접속 환경에서 <strong>이번 달 위치 확인 횟수(1회)</strong>를 이미 모두 사용하였습니다.
-      </p>
-      <div class="notice-box">
-        <div style="margin-bottom: 6px;">
-          <span style="color: #94a3b8;">최근 조회 일시:</span> <strong id="locked-last-time" style="color: #cbd5e1;">-</strong>
+    <!-- Floating Bottom Sheet Card -->
+    <div id="bottom-sheet" class="bottom-sheet">
+      <!-- 1. Guide State (초기 상태) -->
+      <div id="state-guide" class="guide-state">
+        <div class="guide-title">
+          <i class="fa-solid fa-location-crosshairs"></i>
+          <span>게스트 안심 현재 위치 확인</span>
         </div>
-        <div>
-          <span style="color: #94a3b8;">다음 조회 가능:</span> <strong id="locked-next-time" style="color: #34d399;">-</strong>
+        <div class="guide-desc">
+          상단 검색창에 확인하고자 하는 <strong>기기 ID</strong>를 입력하고 [조회]를 누르면 현재 위치가 지도에 표시됩니다.
+        </div>
+        <div style="font-size: 0.78rem; color: #fbbf24; margin-top: 4px; display: flex; align-items: center; gap: 5px;">
+          <i class="fa-solid fa-circle-info"></i>
+          <span>프라이버시 보호를 위해 기기/환경당 <strong>한 달에 2회</strong>만 이용 가능합니다.</span>
         </div>
       </div>
-      <p style="font-size: 0.8rem; color: #64748b; line-height: 1.4;">
-        * 실시간 연속 추적이나 추가 확인이 필요한 경우, 메인 관리자에게 문의해 주세요.
-      </p>
-    </div>
 
-    <!-- State C: Loading / Querying -->
-    <div id="modal-loading" class="overlay-card" style="display: none;">
-      <div class="icon-box loading">
-        <i class="fa-solid fa-spinner fa-spin"></i>
-      </div>
-      <h2 class="card-title">현재 위치 수신 중</h2>
-      <p class="card-desc">최신 GPS 픽스를 안전하게 조회하고 있습니다...</p>
-    </div>
-
-    <!-- Bottom Info Card (Displayed after successful check) -->
-    <div id="bottom-info-card" class="bottom-info-card">
-      <div class="info-header">
-        <div class="device-tag">
-          <i class="fa-solid fa-mobile-screen" style="color: var(--primary);"></i>
-          <span id="info-device-name">기기명</span>
+      <!-- 2. Result State (조회 성공 상태) -->
+      <div id="state-result" class="result-state">
+        <div class="info-header">
+          <div class="device-title">
+            <i class="fa-solid fa-mobile-screen" style="color: var(--primary);"></i>
+            <span id="res-device-name">-</span>
+          </div>
+          <div id="res-battery" class="battery-pill">
+            <i class="fa-solid fa-battery-half"></i> <span>--%</span>
+          </div>
         </div>
-        <div id="info-battery" class="battery-pill">
-          <i class="fa-solid fa-battery-half"></i> <span>--%</span>
+        <div class="info-row">
+          <i class="fa-solid fa-location-dot"></i>
+          <span id="res-address" class="address-text">위치 주소 확인 중...</span>
+        </div>
+        <div class="sub-meta">
+          <span><i class="fa-solid fa-clock"></i> <span id="res-time">--</span></span>
+          <span><i class="fa-solid fa-bullseye"></i> <span id="res-accuracy">--</span></span>
+        </div>
+        <div class="bottom-tag-row">
+          <div id="res-remaining-pill" class="pill-remaining">
+            <i class="fa-solid fa-circle-check"></i>
+            <span id="res-remaining-text">이번 달 잔여: 1회 / 2회</span>
+          </div>
+          <div class="pill-status">
+            <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #34d399;"></span>
+            <span>최신 수신 완료</span>
+          </div>
         </div>
       </div>
-      <div class="info-row">
-        <i class="fa-solid fa-location-dot"></i>
-        <span class="label">위치 주소</span>
-        <span id="info-address" class="value">주소 확인 중...</span>
-      </div>
-      <div class="info-row">
-        <i class="fa-solid fa-clock"></i>
-        <span class="label">수신 시각</span>
-        <span id="info-time" class="value">--</span>
-      </div>
-      <div class="info-row">
-        <i class="fa-solid fa-bullseye"></i>
-        <span class="label">정확도</span>
-        <span id="info-accuracy" class="value">--</span>
-      </div>
-      <div class="consumed-notice">
-        <i class="fa-solid fa-lock"></i>
-        <span>이번 달(30일) 조회가 완료되었습니다. 다음 조회는 30일 후에 가능합니다.</span>
+
+      <!-- 3. Locked State (2회 소진 상태) -->
+      <div id="state-locked" class="locked-state">
+        <div class="locked-icon"><i class="fa-solid fa-lock"></i></div>
+        <div class="locked-title">이번 달 조회 횟수(2회) 소진 완료</div>
+        <div class="locked-desc">
+          게스트 위치 확인은 접속 기기/환경당 <strong>한 달에 2회</strong>만 제공됩니다.
+        </div>
+        <div class="locked-next">
+          다음 조회 가능: <span id="locked-next-date">--</span>
+        </div>
       </div>
     </div>
 
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="loading-overlay">
+      <i class="fa-solid fa-circle-notch loading-spinner"></i>
+      <div class="loading-text">기기 위치 확인 중...</div>
+    </div>
   </div>
 
   <!-- Leaflet Map JS -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
   <script>
-    // --- 1. Firestore REST API Configuration ---
+    // --- 1. Constants & Configuration ---
     const PROJECT_ID = "antitheftguard-cadb1";
     const FIREBASE_API_KEY = "AIzaSyBbcHMHyAo6okw_1PH9XrNW2XTsfNRfH1o";
     const REST_BASE = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
-    const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000; // 30일 (한 달 기준 밀리초)
+    const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000; // 30일
+    const MAX_MONTHLY_LIMIT = 2; // 한 달에 2회 허용
 
     function getFirestoreUrl(path, params = {}) {
       const url = new URL(`${REST_BASE}/${path}`);
       url.searchParams.set("key", FIREBASE_API_KEY);
       for (const [k, v] of Object.entries(params)) {
-        if (v !== undefined && v !== null) {
-          url.searchParams.set(k, v);
-        }
+        if (v !== undefined && v !== null) url.searchParams.set(k, v);
       }
       return url.toString();
     }
@@ -564,12 +599,12 @@
       return result;
     }
 
-    // --- 2. Advanced Client Fingerprinting (접속 환경/기기 인식) ---
+    // --- 2. Advanced Client Fingerprinting (기기/환경 인식) ---
     async function generateDeviceFingerprint() {
       try {
-        const components = [];
+        const parts = [];
 
-        // 1) Canvas Fingerprint
+        // 1) Canvas 2D
         const canvas = document.createElement('canvas');
         canvas.width = 200;
         canvas.height = 50;
@@ -577,62 +612,54 @@
         if (ctx) {
           ctx.textBaseline = 'top';
           ctx.font = '14px Arial';
-          ctx.textBaseline = 'alphabetic';
           ctx.fillStyle = '#f60';
           ctx.fillRect(125, 1, 62, 20);
           ctx.fillStyle = '#069';
           ctx.fillText('AntiTheftGuard,Guest@2026', 2, 15);
           ctx.fillStyle = 'rgba(102, 204, 0, 0.7)';
           ctx.fillText('AntiTheftGuard,Guest@2026', 4, 17);
-          components.push(canvas.toDataURL());
+          parts.push(canvas.toDataURL());
         }
 
-        // 2) WebGL Hardware Renderer
+        // 2) WebGL Renderer
         try {
           const gl = document.createElement('canvas').getContext('webgl');
           if (gl) {
             const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
             if (debugInfo) {
-              components.push(gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL));
-              components.push(gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL));
+              parts.push(gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL));
+              parts.push(gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL));
             }
           }
         } catch (_) {}
 
-        // 3) Screen & Viewport traits
-        components.push(`${screen.width}x${screen.height}x${screen.colorDepth}`);
-        components.push(`pixelRatio:${window.devicePixelRatio || 1}`);
+        // 3) Screen & Platform
+        parts.push(`${screen.width}x${screen.height}x${screen.colorDepth}@${window.devicePixelRatio || 1}`);
+        parts.push(navigator.userAgent || '');
+        parts.push(navigator.language || '');
+        parts.push((navigator.languages || []).join(','));
+        parts.push(`cpu:${navigator.hardwareConcurrency || 0}`);
+        parts.push(`mem:${navigator.deviceMemory || 0}`);
 
-        // 4) System & Navigator traits
-        components.push(navigator.userAgent || '');
-        components.push(navigator.language || '');
-        components.push((navigator.languages || []).join(','));
-        components.push(`cpu:${navigator.hardwareConcurrency || 0}`);
-        components.push(`mem:${navigator.deviceMemory || 0}`);
-
-        // 5) Timezone
+        // 4) Timezone
         try {
-          components.push(Intl.DateTimeFormat().resolvedOptions().timeZone || '');
+          parts.push(Intl.DateTimeFormat().resolvedOptions().timeZone || '');
         } catch (_) {}
 
-        // SHA-256 Hash
-        const rawString = components.join('###');
-        const msgBuffer = new TextEncoder().encode(rawString);
-        const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+        const raw = parts.join('###');
+        const buffer = new TextEncoder().encode(raw);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
         const hashArray = Array.from(new Uint8Array(hashBuffer));
         const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
         return `fp_${hashHex.substring(0, 32)}`;
       } catch (e) {
-        console.warn('Fingerprint fallback generation:', e);
-        // Fallback simple hash
-        let fallback = 'fb_' + (screen.width * screen.height) + '_' + navigator.userAgent.length;
-        return fallback;
+        return `fb_${screen.width}x${screen.height}_${navigator.userAgent.length}`;
       }
     }
 
-    // --- 3. Multi-tier Storage Layer (IndexedDB + localStorage) ---
-    const DB_NAME = 'ATG_Guest_DB';
-    const DB_STORE = 'access_locks';
+    // --- 3. Multi-tier Storage (IndexedDB + localStorage) ---
+    const DB_NAME = 'ATG_Guest_DB_v2';
+    const DB_STORE = 'usage_history';
 
     function openIndexedDB() {
       return new Promise((resolve, reject) => {
@@ -648,14 +675,14 @@
       });
     }
 
-    async function getIdbLock(key) {
+    async function getIdbHistory(key) {
       try {
         const db = await openIndexedDB();
         return new Promise((resolve) => {
           const tx = db.transaction(DB_STORE, 'readonly');
           const store = tx.objectStore(DB_STORE);
           const req = store.get(key);
-          req.onsuccess = () => resolve(req.result ? req.result.timestamp : null);
+          req.onsuccess = () => resolve(req.result ? req.result.timestamps : null);
           req.onerror = () => resolve(null);
         });
       } catch (_) {
@@ -663,96 +690,108 @@
       }
     }
 
-    async function setIdbLock(key, timestamp) {
+    async function setIdbHistory(key, timestamps) {
       try {
         const db = await openIndexedDB();
         return new Promise((resolve) => {
           const tx = db.transaction(DB_STORE, 'readwrite');
           const store = tx.objectStore(DB_STORE);
-          store.put({ key, timestamp });
+          store.put({ key, timestamps });
           tx.oncomplete = () => resolve(true);
           tx.onerror = () => resolve(false);
         });
       } catch (_) {}
     }
 
-    // --- 4. Monthly Access Verification (이중 잠금 검증) ---
-    async function checkMonthlyAccessStatus(fingerprint, deviceId) {
-      const lockKey = `lock_${fingerprint}_${deviceId}`;
+    // --- 4. Rate-limit Verification (2 times per 30-day window) ---
+    async function getValidAccessTimestamps(fingerprint) {
       const now = Date.now();
+      const storageKey = `atg_guest_ts_${fingerprint}`;
+      let timestamps = [];
 
-      // 1) LocalStorage Check
-      const localTs = parseInt(localStorage.getItem(lockKey) || '0', 10);
-      if (localTs > 0 && (now - localTs) < THIRTY_DAYS_MS) {
-        return { locked: true, lastAccessed: localTs };
-      }
-
-      // 2) IndexedDB Check (시크릿창 우회 방지용 로컬 백업)
-      const idbTs = await getIdbLock(lockKey);
-      if (idbTs && (now - idbTs) < THIRTY_DAYS_MS) {
-        localStorage.setItem(lockKey, idbTs.toString());
-        return { locked: true, lastAccessed: idbTs };
-      }
-
-      // 3) Firestore Server Check (원격 핑거프린트 이력 조회)
+      // 1) LocalStorage
       try {
-        const firestoreDocId = `${fingerprint}_${deviceId}`;
-        const res = await fetch(getFirestoreUrl(`guest_access/${firestoreDocId}`));
+        const stored = localStorage.getItem(storageKey);
+        if (stored) {
+          timestamps = JSON.parse(stored);
+        }
+      } catch (_) {}
+
+      // 2) IndexedDB
+      if (!timestamps || timestamps.length === 0) {
+        const idbTs = await getIdbHistory(storageKey);
+        if (idbTs && idbTs.length > 0) timestamps = idbTs;
+      }
+
+      // 3) Firestore Server Check
+      try {
+        const res = await fetch(getFirestoreUrl(`guest_access/${fingerprint}`));
         if (res.ok) {
           const doc = await res.json();
           const data = parseFirestoreDoc(doc);
-          if (data && data.lastAccessed) {
-            const serverTs = parseInt(data.lastAccessed, 10);
-            if (now - serverTs < THIRTY_DAYS_MS) {
-              // 로컬에도 동기화
-              localStorage.setItem(lockKey, serverTs.toString());
-              await setIdbLock(lockKey, serverTs);
-              return { locked: true, lastAccessed: serverTs };
+          if (data && Array.isArray(data.timestamps)) {
+            const serverTs = data.timestamps.map(t => parseInt(t, 10)).filter(Boolean);
+            if (serverTs.length > timestamps.length) {
+              timestamps = serverTs;
             }
           }
         }
       } catch (e) {
-        console.warn('Firestore server lock check error:', e);
+        console.warn('Firestore rate limit fetch error:', e);
       }
 
-      return { locked: false, lastAccessed: null };
+      // Filter only timestamps within the last 30 days
+      const valid = (timestamps || []).filter(t => (now - t) < THIRTY_DAYS_MS);
+      return valid;
     }
 
-    async function recordAccessAttempt(fingerprint, deviceId) {
+    async function recordNewAccess(fingerprint, deviceId) {
       const now = Date.now();
-      const lockKey = `lock_${fingerprint}_${deviceId}`;
+      const storageKey = `atg_guest_ts_${fingerprint}`;
+      let current = await getValidAccessTimestamps(fingerprint);
+      current.push(now);
 
-      // 1) LocalStorage 저장
-      localStorage.setItem(lockKey, now.toString());
-
-      // 2) IndexedDB 저장
-      await setIdbLock(lockKey, now);
-
-      // 3) Firestore 서버 저장 (Patch/Upsert)
+      // 1) LocalStorage
       try {
-        const firestoreDocId = `${fingerprint}_${deviceId}`;
-        await fetch(getFirestoreUrl(`guest_access/${firestoreDocId}`), {
+        localStorage.setItem(storageKey, JSON.stringify(current));
+      } catch (_) {}
+
+      // 2) IndexedDB
+      await setIdbHistory(storageKey, current);
+
+      // 3) Firestore
+      try {
+        await fetch(getFirestoreUrl(`guest_access/${fingerprint}`), {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             fields: {
               fingerprint: { stringValue: fingerprint },
-              deviceId: { stringValue: deviceId },
+              lastDeviceId: { stringValue: deviceId },
               lastAccessed: { integerValue: now.toString() },
-              lastAccessedIso: { stringValue: new Date(now).toISOString() }
+              timestamps: {
+                arrayValue: {
+                  values: current.map(ts => ({ integerValue: ts.toString() }))
+                }
+              }
             }
           })
         });
       } catch (e) {
-        console.warn('Failed to record server lock:', e);
+        console.warn('Firestore record error:', e);
       }
+
+      return current;
     }
 
-    // --- 5. Leaflet Map Setup ---
+    // --- 5. Leaflet Map Initialization ---
+    // Move zoom controls to bottomright to avoid overlapping with top search bar!
     const map = L.map('map', {
-      zoomControl: true,
+      zoomControl: false,
       attributionControl: false
     }).setView([37.5665, 126.9780], 14);
+
+    L.control.zoom({ position: 'bottomright' }).addTo(map);
 
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19
@@ -761,116 +800,102 @@
     let currentMarker = null;
     let currentCircle = null;
     let clientFingerprint = '';
-    let currentDeviceId = '';
-    let availableDevices = [];
+    let validTimestamps = [];
 
-    // --- 6. UI Modal Controls ---
-    function showModal(modalId) {
-      document.getElementById('modal-ready').style.display = 'none';
-      document.getElementById('modal-locked').style.display = 'none';
-      document.getElementById('modal-loading').style.display = 'none';
-      if (modalId) {
-        document.getElementById(modalId).style.display = 'block';
-      }
-    }
-
+    // --- 6. UI Helpers ---
     function formatDate(ts) {
       const d = new Date(ts);
       return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
     }
 
-    // --- 7. Main Initialization ---
-    async function initGuestDashboard() {
-      // 1) 핑거프린트 생성
-      clientFingerprint = await generateDeviceFingerprint();
-
-      // 2) 등록된 기기 목록 로드
-      await loadDeviceList();
-
-      // 3) 기기별 월 1회 상태 검증
-      await evaluateDeviceAccess();
-    }
-
-    async function loadDeviceList() {
-      try {
-        const res = await fetch(getFirestoreUrl('devices'));
-        if (res.ok) {
-          const data = await res.json();
-          if (data && data.documents) {
-            availableDevices = data.documents.map(d => parseFirestoreDoc(d)).filter(Boolean);
-          }
-        }
-      } catch (e) {
-        console.warn('Device fetch error:', e);
-      }
-
-      const selectEl = document.getElementById('device-select');
-      const urlParams = new URLSearchParams(window.location.search);
-      const paramDevice = urlParams.get('device');
-
-      if (availableDevices.length > 0) {
-        selectEl.innerHTML = availableDevices.map(d => {
-          const devName = d.deviceName ? ` (${d.deviceName})` : '';
-          return `<option value="${d.deviceId}">${d.deviceId}${devName}</option>`;
-        }).join('');
-
-        const matched = availableDevices.find(d => d.deviceId === paramDevice);
-        if (matched) {
-          currentDeviceId = matched.deviceId;
-          selectEl.value = currentDeviceId;
-        } else {
-          currentDeviceId = availableDevices[0].deviceId;
-          selectEl.value = currentDeviceId;
-        }
-      } else if (paramDevice) {
-        currentDeviceId = paramDevice;
-        selectEl.innerHTML = `<option value="${paramDevice}">${paramDevice}</option>`;
+    function updateHeaderBadge(remaining) {
+      const badge = document.getElementById('badge-limit');
+      const badgeText = document.getElementById('badge-limit-text');
+      if (remaining > 0) {
+        badge.className = 'badge-limit';
+        badgeText.innerText = `잔여: ${remaining}회 / 월`;
       } else {
-        currentDeviceId = 'kmk';
-        selectEl.innerHTML = `<option value="kmk">kmk</option>`;
+        badge.className = 'badge-limit depleted';
+        badgeText.innerText = `소진: 0회 / 월`;
       }
     }
 
-    async function evaluateDeviceAccess() {
-      if (!currentDeviceId) return;
+    function showSheetState(stateName) {
+      document.getElementById('state-guide').style.display = 'none';
+      document.getElementById('state-result').style.display = 'none';
+      document.getElementById('state-locked').style.display = 'none';
 
-      const deviceObj = availableDevices.find(d => d.deviceId === currentDeviceId);
-      const displayName = deviceObj && deviceObj.deviceName ? `${currentDeviceId} (${deviceObj.deviceName})` : currentDeviceId;
-      document.getElementById('ready-device-name').innerText = displayName;
-
-      // 이전 마커/인포 카드 제거
-      if (currentMarker) { map.removeLayer(currentMarker); currentMarker = null; }
-      if (currentCircle) { map.removeLayer(currentCircle); currentCircle = null; }
-      document.getElementById('bottom-info-card').style.display = 'none';
-
-      // 핑거프린트 + 기기 ID 조합으로 한 달 이내 조회 이력 검사
-      showModal('modal-loading');
-      const status = await checkMonthlyAccessStatus(clientFingerprint, currentDeviceId);
-
-      if (status.locked) {
-        // 이미 이번 달 조회를 소진함 -> 잠금 모달 표시
-        document.getElementById('locked-last-time').innerText = formatDate(status.lastAccessed);
-        document.getElementById('locked-next-time').innerText = formatDate(status.lastAccessed + THIRTY_DAYS_MS);
-        showModal('modal-locked');
-      } else {
-        // 이번 달 조회 가능 -> 준비 모달 표시
-        showModal('modal-ready');
+      if (stateName === 'guide') {
+        document.getElementById('state-guide').style.display = 'flex';
+      } else if (stateName === 'result') {
+        document.getElementById('state-result').style.display = 'block';
+      } else if (stateName === 'locked') {
+        document.getElementById('state-locked').style.display = 'block';
       }
     }
 
-    async function onDeviceChanged() {
-      const selectEl = document.getElementById('device-select');
-      currentDeviceId = selectEl.value;
-      await evaluateDeviceAccess();
+    function setLoading(isLoading) {
+      document.getElementById('loading-overlay').style.display = isLoading ? 'flex' : 'none';
+      document.getElementById('btn-search').disabled = isLoading;
     }
 
-    // --- 8. Confirm & Fetch Current Location ---
-    async function confirmAndCheckLocation() {
-      showModal('modal-loading');
+    // --- 7. Main Search & Location Logic ---
+    async function handleSearchClick() {
+      const inputEl = document.getElementById('device-input');
+      const targetId = inputEl.value.trim();
+
+      if (!targetId) {
+        alert('확인할 기기 ID를 입력해 주세요. (예: kmk, jhs)');
+        inputEl.focus();
+        return;
+      }
+
+      setLoading(true);
 
       try {
-        // 1) 최신 GPS 1건만 단독 쿼리 (과거 궤적 배제, limit: 1)
-        const queryRes = await fetch(getFirestoreUrl(`devices/${currentDeviceId}:runQuery`), {
+        // 1) 핑거프린트 및 잔여 횟수 실시간 최신화
+        validTimestamps = await getValidAccessTimestamps(clientFingerprint);
+        const remaining = Math.max(0, MAX_MONTHLY_LIMIT - validTimestamps.length);
+        updateHeaderBadge(remaining);
+
+        if (remaining <= 0) {
+          setLoading(false);
+          const earliest = Math.min(...validTimestamps);
+          const nextDate = new Date(earliest + THIRTY_DAYS_MS);
+          document.getElementById('locked-next-date').innerText = formatDate(nextDate.getTime());
+          showSheetState('locked');
+          alert(`🔒 이번 달 위치 확인 가능 횟수(2회)를 모두 소진했습니다.\n\n다음 조회 가능: ${formatDate(nextDate.getTime())}`);
+          return;
+        }
+
+        // 2) 기기 존재 여부 확인 (존재하지 않으면 횟수 차감 안 함)
+        const devRes = await fetch(getFirestoreUrl(`devices/${targetId}`));
+        if (!devRes.ok) {
+          setLoading(false);
+          alert(`⚠️ 등록되지 않은 기기 ID입니다: "${targetId}"\n\n기기명이 올바른지 확인해 주세요. (조회 횟수는 차감되지 않았습니다)`);
+          return;
+        }
+
+        const devDoc = await devRes.json();
+        const devData = parseFirestoreDoc(devDoc);
+        const deviceName = (devData && devData.deviceName) ? devData.deviceName : targetId;
+        let batteryLevel = (devData && devData.batteryLevel !== undefined) ? devData.batteryLevel : null;
+
+        // 3) 사용자 확인 다이얼로그
+        setLoading(false);
+        const confirmed = confirm(
+          `📍 [${targetId}] 기기의 현재 위치를 확인하시겠습니까?\n\n` +
+          `• 기기명: ${deviceName}\n` +
+          `• 이번 달 잔여 횟수: ${remaining}회 중 1회가 사용됩니다.\n` +
+          `• 확인 후 잔여 횟수: ${remaining - 1}회`
+        );
+
+        if (!confirmed) return;
+
+        setLoading(true);
+
+        // 4) 최신 GPS 1건 단독 쿼리 (limit: 1, 과거 궤적 배제)
+        const queryRes = await fetch(getFirestoreUrl(`devices/${targetId}:runQuery`), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -890,55 +915,47 @@
         const batches = queryData.filter(i => i.document).map(i => parseFirestoreDoc(i.document));
 
         if (!batches || batches.length === 0 || !batches[0].points || batches[0].points.length === 0) {
-          alert('기기의 최신 GPS 기록이 아직 없습니다. 앱에서 추적이 동작 중인지 확인해 주세요.');
-          showModal('modal-ready');
+          setLoading(false);
+          alert(`기기의 GPS 위치 기록이 아직 없습니다. 앱이 실행 중인지 확인해 주세요. (횟수는 차감되지 않았습니다)`);
           return;
         }
 
-        // 배치 내 가장 마지막(최신) 포인트 선택
+        // 최신 포인트 추출
         const points = batches[0].points;
         const latestPoint = points[points.length - 1];
+        if (latestPoint.batteryLevel !== undefined && batteryLevel === null) {
+          batteryLevel = latestPoint.batteryLevel;
+        }
 
-        // 2) 기기 최신 메타데이터 (배터리 등) 보강
-        let batteryLevel = latestPoint.batteryLevel;
-        let deviceName = currentDeviceId;
-        try {
-          const devRes = await fetch(getFirestoreUrl(`devices/${currentDeviceId}`));
-          if (devRes.ok) {
-            const devDoc = await devRes.json();
-            const devData = parseFirestoreDoc(devDoc);
-            if (devData) {
-              if (devData.batteryLevel !== undefined) batteryLevel = devData.batteryLevel;
-              if (devData.deviceName) deviceName = devData.deviceName;
-            }
-          }
-        } catch (_) {}
+        // 5) 횟수 차감 및 이중 잠금 영구 기록
+        const updatedTimestamps = await recordNewAccess(clientFingerprint, targetId);
+        const newRemaining = Math.max(0, MAX_MONTHLY_LIMIT - updatedTimestamps.length);
+        updateHeaderBadge(newRemaining);
 
-        // 3) 이번 달 조회 완료 기록 (로컬 스토리지 & Firestore 영구 락)
-        await recordAccessAttempt(clientFingerprint, currentDeviceId);
+        // 6) 지도에 위치 펄싱 핀 렌더링
+        renderLocationMarker(latestPoint.latitude, latestPoint.longitude, latestPoint.accuracy);
 
-        // 4) 지도에 펄싱 핀 및 오차 반경 표시
-        renderCurrentLocationOnMap(latestPoint, deviceName, batteryLevel);
+        // 7) 하단 정보 카드 갱신
+        document.getElementById('res-device-name').innerText = `${targetId} (${deviceName})`;
+        document.getElementById('res-battery').innerHTML = `<i class="fa-solid fa-battery-half"></i> <span>${batteryLevel ?? '--'}%</span>`;
+        document.getElementById('res-time').innerText = formatDate(latestPoint.timestamp);
+        document.getElementById('res-accuracy').innerText = `오차 ±${Math.round(latestPoint.accuracy || 15)}m`;
+        document.getElementById('res-remaining-text').innerText = `이번 달 잔여: ${newRemaining}회 / ${MAX_MONTHLY_LIMIT}회`;
 
-        // 5) 역지오코딩 (도로명 주소 변환)
-        reverseGeocodeAddress(latestPoint.latitude, latestPoint.longitude);
+        showSheetState('result');
 
-        // 6) 모달 닫고 하단 정보 카드 표시
-        showModal(null);
+        // 8) 도로명 주소 변환 (OpenStreetMap Nominatim)
+        reverseGeocode(latestPoint.latitude, latestPoint.longitude);
 
       } catch (err) {
-        console.error('Failed to query location:', err);
-        alert('현재 위치 정보를 가져오는데 실패했습니다. 잠시 후 다시 시도해 주세요.');
-        showModal('modal-ready');
+        console.error('Location check failed:', err);
+        alert('위치 정보를 조회하는 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.');
+      } finally {
+        setLoading(false);
       }
     }
 
-    function renderCurrentLocationOnMap(pt, deviceName, batteryLevel) {
-      const lat = pt.latitude;
-      const lng = pt.longitude;
-      const accuracy = pt.accuracy || 15;
-
-      // Custom Pulse Icon
+    function renderLocationMarker(lat, lng, accuracy = 15) {
       const pulseIcon = L.divIcon({
         className: '',
         html: `
@@ -965,17 +982,10 @@
       }).addTo(map);
 
       map.flyTo([lat, lng], 16, { animate: true, duration: 1.2 });
-
-      // 하단 카드 채우기
-      document.getElementById('info-device-name').innerText = `${currentDeviceId} (${deviceName})`;
-      document.getElementById('info-battery').innerHTML = `<i class="fa-solid fa-battery-half"></i> <span>${batteryLevel ?? '--'}%</span>`;
-      document.getElementById('info-time').innerText = formatDate(pt.timestamp);
-      document.getElementById('info-accuracy').innerText = `오차 약 ±${Math.round(accuracy)}m 이내`;
-      document.getElementById('bottom-info-card').style.display = 'block';
     }
 
-    async function reverseGeocodeAddress(lat, lng) {
-      const addrEl = document.getElementById('info-address');
+    async function reverseGeocode(lat, lng) {
+      const addrEl = document.getElementById('res-address');
       try {
         const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`, {
           headers: { 'Accept-Language': 'ko' }
@@ -991,8 +1001,40 @@
       addrEl.innerText = `위도 ${lat.toFixed(6)}, 경도 ${lng.toFixed(6)}`;
     }
 
-    // Page Load
-    window.addEventListener('DOMContentLoaded', initGuestDashboard);
+    // --- 8. Initialization on Page Load ---
+    window.addEventListener('DOMContentLoaded', async () => {
+      // 1) 핑거프린트 생성
+      clientFingerprint = await generateDeviceFingerprint();
+
+      // 2) 잔여 횟수 확인
+      validTimestamps = await getValidAccessTimestamps(clientFingerprint);
+      const remaining = Math.max(0, MAX_MONTHLY_LIMIT - validTimestamps.length);
+      updateHeaderBadge(remaining);
+
+      // 3) URL 파라미터 ?device= 가 있으면 검색창에 자동 입력
+      const urlParams = new URLSearchParams(window.location.search);
+      const paramDevice = urlParams.get('device');
+      if (paramDevice) {
+        document.getElementById('device-input').value = paramDevice;
+      }
+
+      // 4) 엔터키 검색 지원
+      document.getElementById('device-input').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          handleSearchClick();
+        }
+      });
+
+      // 초기 상태: 가이드 표시 (소진된 경우 잠금 표시)
+      if (remaining <= 0) {
+        const earliest = Math.min(...validTimestamps);
+        const nextDate = new Date(earliest + THIRTY_DAYS_MS);
+        document.getElementById('locked-next-date').innerText = formatDate(nextDate.getTime());
+        showSheetState('locked');
+      } else {
+        showSheetState('guide');
+      }
+    });
   </script>
 </body>
 </html>
