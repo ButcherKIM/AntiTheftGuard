@@ -1,4 +1,4 @@
-const CACHE_NAME = 'antitheft-guard-v14';
+const CACHE_NAME = 'antitheft-guard-v15';
 const STATIC_ASSETS = [
   './',
   './index.html',
