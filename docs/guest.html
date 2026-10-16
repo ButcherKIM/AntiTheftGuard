@@ -579,7 +579,7 @@
         if (idbTs && idbTs.length > 0) timestamps = idbTs;
       }
 
-      // 3) Firestore Server Check
+      // 3) Firestore Server Check (Authority Source)
       try {
         const res = await fetch(getFirestoreUrl(`guest_access/${fingerprint}`));
         if (res.ok) {
@@ -587,9 +587,21 @@
           const data = parseFirestoreDoc(doc);
           if (data && Array.isArray(data.timestamps)) {
             const serverTs = data.timestamps.map(t => parseInt(t, 10)).filter(Boolean);
-            if (serverTs.length > timestamps.length) {
-              timestamps = serverTs;
-            }
+            // 서버에 저장된 타임스탬프로 로컬 저장소 동기화
+            timestamps = serverTs;
+            try {
+              localStorage.setItem(storageKey, JSON.stringify(timestamps));
+            } catch (_) {}
+            await setIdbHistory(storageKey, timestamps);
+          }
+        } else if (res.status === 404) {
+          // 관리자(사용자)가 파이어베이스에서 문서를 삭제하여 충전/초기화한 경우
+          if (timestamps && timestamps.length > 0) {
+            timestamps = [];
+            try {
+              localStorage.removeItem(storageKey);
+            } catch (_) {}
+            await setIdbHistory(storageKey, []);
           }
         }
       } catch (e) {
