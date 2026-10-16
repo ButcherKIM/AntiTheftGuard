@@ -1,0 +1,998 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>AntiTheft Guard - 게스트 안심 위치 확인</title>
+
+  <!-- Leaflet Map CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="icon" type="image/svg+xml" href="./icons/icon.svg" />
+  <meta name="theme-color" content="#0f172a" />
+
+  <!-- Google Fonts & Font Awesome Icons -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Pretendard:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+
+  <style>
+    :root {
+      --bg-dark: #0f172a;
+      --bg-panel: #1e293b;
+      --bg-card: rgba(30, 41, 59, 0.92);
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --success: #10b981;
+      --danger: #ef4444;
+      --warning: #f59e0b;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --border: #334155;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif;
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* Top Navigation Header */
+    header {
+      background: var(--bg-panel);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 18px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 1000;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 1.15rem;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+    }
+
+    .brand i {
+      color: var(--primary);
+      font-size: 1.35rem;
+    }
+
+    .badge-guest {
+      font-size: 0.72rem;
+      padding: 3px 8px;
+      border-radius: 6px;
+      background: rgba(59, 130, 246, 0.2);
+      color: #60a5fa;
+      border: 1px solid rgba(59, 130, 246, 0.4);
+      font-weight: 700;
+      letter-spacing: 0;
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .badge-limit {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.8rem;
+      padding: 5px 10px;
+      border-radius: 9999px;
+      background: rgba(245, 158, 11, 0.15);
+      color: #fbbf24;
+      border: 1px solid rgba(245, 158, 11, 0.35);
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    /* Fullscreen Map */
+    #map-container {
+      flex: 1;
+      width: 100%;
+      height: 100%;
+      position: relative;
+    }
+
+    #map {
+      width: 100%;
+      height: 100%;
+      background: #0b1120;
+    }
+
+    /* Device Selector Dropdown in Map Overlay */
+    .device-bar {
+      position: absolute;
+      top: 14px;
+      left: 14px;
+      z-index: 900;
+      background: var(--bg-card);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      padding: 8px 12px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+      max-width: calc(100vw - 28px);
+    }
+
+    .device-bar label {
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .device-select {
+      background: var(--bg-dark);
+      color: var(--text-main);
+      border: 1px solid var(--border);
+      padding: 6px 12px;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      outline: none;
+      cursor: pointer;
+    }
+    .device-select:focus {
+      border-color: var(--primary);
+    }
+
+    /* Center Modal / Overlay Cards */
+    .overlay-card {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 950;
+      width: 90%;
+      max-width: 440px;
+      background: var(--bg-card);
+      backdrop-filter: blur(16px);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 28px 24px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+      text-align: center;
+      animation: fadeIn 0.3s ease-out;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translate(-50%, -46%); }
+      to { opacity: 1; transform: translate(-50%, -50%); }
+    }
+
+    .icon-box {
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.8rem;
+      margin: 0 auto 18px auto;
+    }
+
+    .icon-box.ready {
+      background: rgba(59, 130, 246, 0.15);
+      color: #60a5fa;
+      border: 1px solid rgba(59, 130, 246, 0.3);
+    }
+
+    .icon-box.locked {
+      background: rgba(239, 68, 68, 0.15);
+      color: #f87171;
+      border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+
+    .icon-box.loading {
+      background: rgba(16, 185, 129, 0.15);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+
+    .card-title {
+      font-size: 1.25rem;
+      font-weight: 800;
+      margin-bottom: 8px;
+    }
+
+    .card-desc {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      line-height: 1.55;
+      margin-bottom: 20px;
+    }
+
+    .notice-box {
+      background: rgba(15, 23, 42, 0.7);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 14px;
+      text-align: left;
+      font-size: 0.8rem;
+      color: #cbd5e1;
+      line-height: 1.5;
+      margin-bottom: 22px;
+    }
+    .notice-box strong {
+      color: #fbbf24;
+    }
+
+    .btn-action {
+      width: 100%;
+      padding: 14px;
+      border-radius: 12px;
+      border: none;
+      background: linear-gradient(135deg, #2563eb, #3b82f6);
+      color: #ffffff;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      box-shadow: 0 4px 16px rgba(37, 99, 235, 0.4);
+      transition: all 0.2s;
+    }
+    .btn-action:hover {
+      background: linear-gradient(135deg, #1d4ed8, #2563eb);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(37, 99, 235, 0.5);
+    }
+    .btn-action:active {
+      transform: scale(0.98);
+    }
+    .btn-action:disabled {
+      background: #475569;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
+
+    /* Bottom Info Card when Location is Active */
+    .bottom-info-card {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 900;
+      width: 92%;
+      max-width: 500px;
+      background: var(--bg-card);
+      backdrop-filter: blur(16px);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 18px 20px;
+      box-shadow: 0 16px 36px rgba(0, 0, 0, 0.45);
+      animation: slideUp 0.35s ease-out;
+      display: none;
+    }
+
+    @keyframes slideUp {
+      from { opacity: 0; transform: translate(-50%, 20px); }
+      to { opacity: 1; transform: translate(-50%, 0); }
+    }
+
+    .info-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .device-tag {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 1rem;
+      font-weight: 700;
+    }
+
+    .battery-pill {
+      font-size: 0.78rem;
+      padding: 3px 8px;
+      border-radius: 9999px;
+      background: rgba(16, 185, 129, 0.15);
+      color: #34d399;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .info-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      margin-bottom: 8px;
+      font-size: 0.88rem;
+    }
+    .info-row i {
+      color: var(--primary);
+      width: 18px;
+      margin-top: 3px;
+      text-align: center;
+    }
+    .info-row .label {
+      color: var(--text-muted);
+      width: 65px;
+      flex-shrink: 0;
+    }
+    .info-row .value {
+      color: var(--text-main);
+      font-weight: 600;
+      word-break: break-all;
+    }
+
+    .consumed-notice {
+      margin-top: 12px;
+      padding-top: 10px;
+      border-top: 1px dashed var(--border);
+      font-size: 0.76rem;
+      color: #f59e0b;
+      text-align: center;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+
+    /* Pulse Marker CSS */
+    .pulse-marker-wrapper {
+      position: relative;
+      width: 32px;
+      height: 32px;
+    }
+    .pulse-marker-core {
+      width: 16px;
+      height: 16px;
+      background-color: #2563eb;
+      border: 3px solid #ffffff;
+      border-radius: 50%;
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      box-shadow: 0 0 10px rgba(37, 99, 235, 0.8);
+      z-index: 2;
+    }
+    .pulse-marker-ring {
+      width: 32px;
+      height: 32px;
+      background-color: rgba(37, 99, 235, 0.4);
+      border-radius: 50%;
+      position: absolute;
+      top: 0;
+      left: 0;
+      animation: markerPulse 2s infinite ease-out;
+      z-index: 1;
+    }
+    @keyframes markerPulse {
+      0% { transform: scale(0.5); opacity: 1; }
+      100% { transform: scale(2.2); opacity: 0; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <header>
+    <div class="brand">
+      <i class="fa-solid fa-shield-halved"></i>
+      <span>AntiTheft Guard</span>
+      <span class="badge-guest">게스트 뷰어</span>
+    </div>
+    <div class="header-right">
+      <div class="badge-limit">
+        <i class="fa-solid fa-clock"></i>
+        <span>월 1회 확인 가능</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Map Container -->
+  <div id="map-container">
+    <div id="map"></div>
+
+    <!-- Top Left Device Selector -->
+    <div class="device-bar">
+      <label for="device-select"><i class="fa-solid fa-mobile-screen"></i> 대상 기기:</label>
+      <select id="device-select" class="device-select" onchange="onDeviceChanged()">
+        <option value="">기기 불러오는 중...</option>
+      </select>
+    </div>
+
+    <!-- State A: Ready to Check (Before button pressed) -->
+    <div id="modal-ready" class="overlay-card" style="display: none;">
+      <div class="icon-box ready">
+        <i class="fa-solid fa-location-crosshairs"></i>
+      </div>
+      <h2 class="card-title">현재 위치 확인</h2>
+      <p class="card-desc">
+        등록된 기기(<strong id="ready-device-name" style="color: #60a5fa;">-</strong>)의 현재 위치를 확인하시겠습니까?
+      </p>
+      <div class="notice-box">
+        <i class="fa-solid fa-circle-exclamation" style="color: #fbbf24; margin-right: 4px;"></i>
+        <strong>이용 제한 안내</strong><br>
+        본 페이지는 프라이버시 보호 및 남용 방지를 위해 접속 기기/환경당 <strong>한 달(30일)에 1회만</strong> 현재 위치를 확인할 수 있습니다.<br>
+        조회 시 이번 달 확인 기회가 소진됩니다.
+      </div>
+      <button id="btn-check-location" class="btn-action" onclick="confirmAndCheckLocation()">
+        <i class="fa-solid fa-location-dot"></i> 지금 현재 위치 확인하기
+      </button>
+    </div>
+
+    <!-- State B: Already Locked (Consumed 1/month) -->
+    <div id="modal-locked" class="overlay-card" style="display: none;">
+      <div class="icon-box locked">
+        <i class="fa-solid fa-lock"></i>
+      </div>
+      <h2 class="card-title">이번 달 조회 완료</h2>
+      <p class="card-desc">
+        해당 접속 환경에서 <strong>이번 달 위치 확인 횟수(1회)</strong>를 이미 모두 사용하였습니다.
+      </p>
+      <div class="notice-box">
+        <div style="margin-bottom: 6px;">
+          <span style="color: #94a3b8;">최근 조회 일시:</span> <strong id="locked-last-time" style="color: #cbd5e1;">-</strong>
+        </div>
+        <div>
+          <span style="color: #94a3b8;">다음 조회 가능:</span> <strong id="locked-next-time" style="color: #34d399;">-</strong>
+        </div>
+      </div>
+      <p style="font-size: 0.8rem; color: #64748b; line-height: 1.4;">
+        * 실시간 연속 추적이나 추가 확인이 필요한 경우, 메인 관리자에게 문의해 주세요.
+      </p>
+    </div>
+
+    <!-- State C: Loading / Querying -->
+    <div id="modal-loading" class="overlay-card" style="display: none;">
+      <div class="icon-box loading">
+        <i class="fa-solid fa-spinner fa-spin"></i>
+      </div>
+      <h2 class="card-title">현재 위치 수신 중</h2>
+      <p class="card-desc">최신 GPS 픽스를 안전하게 조회하고 있습니다...</p>
+    </div>
+
+    <!-- Bottom Info Card (Displayed after successful check) -->
+    <div id="bottom-info-card" class="bottom-info-card">
+      <div class="info-header">
+        <div class="device-tag">
+          <i class="fa-solid fa-mobile-screen" style="color: var(--primary);"></i>
+          <span id="info-device-name">기기명</span>
+        </div>
+        <div id="info-battery" class="battery-pill">
+          <i class="fa-solid fa-battery-half"></i> <span>--%</span>
+        </div>
+      </div>
+      <div class="info-row">
+        <i class="fa-solid fa-location-dot"></i>
+        <span class="label">위치 주소</span>
+        <span id="info-address" class="value">주소 확인 중...</span>
+      </div>
+      <div class="info-row">
+        <i class="fa-solid fa-clock"></i>
+        <span class="label">수신 시각</span>
+        <span id="info-time" class="value">--</span>
+      </div>
+      <div class="info-row">
+        <i class="fa-solid fa-bullseye"></i>
+        <span class="label">정확도</span>
+        <span id="info-accuracy" class="value">--</span>
+      </div>
+      <div class="consumed-notice">
+        <i class="fa-solid fa-lock"></i>
+        <span>이번 달(30일) 조회가 완료되었습니다. 다음 조회는 30일 후에 가능합니다.</span>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Leaflet Map JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <script>
+    // --- 1. Firestore REST API Configuration ---
+    const PROJECT_ID = "antitheftguard-cadb1";
+    const FIREBASE_API_KEY = "AIzaSyBbcHMHyAo6okw_1PH9XrNW2XTsfNRfH1o";
+    const REST_BASE = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
+    const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000; // 30일 (한 달 기준 밀리초)
+
+    function getFirestoreUrl(path, params = {}) {
+      const url = new URL(`${REST_BASE}/${path}`);
+      url.searchParams.set("key", FIREBASE_API_KEY);
+      for (const [k, v] of Object.entries(params)) {
+        if (v !== undefined && v !== null) {
+          url.searchParams.set(k, v);
+        }
+      }
+      return url.toString();
+    }
+
+    function parseFirestoreValue(val) {
+      if (!val) return null;
+      if ('stringValue' in val) return val.stringValue;
+      if ('integerValue' in val) return parseInt(val.integerValue, 10);
+      if ('doubleValue' in val) return parseFloat(val.doubleValue);
+      if ('booleanValue' in val) return val.booleanValue;
+      if ('timestampValue' in val) return val.timestampValue;
+      if ('mapValue' in val) {
+        const res = {};
+        const fields = (val.mapValue && val.mapValue.fields) || {};
+        for (const k in fields) res[k] = parseFirestoreValue(fields[k]);
+        return res;
+      }
+      if ('arrayValue' in val) {
+        const list = (val.arrayValue && val.arrayValue.values) || [];
+        return list.map(parseFirestoreValue);
+      }
+      return null;
+    }
+
+    function parseFirestoreDoc(doc) {
+      if (!doc || !doc.fields) return null;
+      const result = { _name: doc.name };
+      for (const key in doc.fields) {
+        result[key] = parseFirestoreValue(doc.fields[key]);
+      }
+      return result;
+    }
+
+    // --- 2. Advanced Client Fingerprinting (접속 환경/기기 인식) ---
+    async function generateDeviceFingerprint() {
+      try {
+        const components = [];
+
+        // 1) Canvas Fingerprint
+        const canvas = document.createElement('canvas');
+        canvas.width = 200;
+        canvas.height = 50;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.textBaseline = 'top';
+          ctx.font = '14px Arial';
+          ctx.textBaseline = 'alphabetic';
+          ctx.fillStyle = '#f60';
+          ctx.fillRect(125, 1, 62, 20);
+          ctx.fillStyle = '#069';
+          ctx.fillText('AntiTheftGuard,Guest@2026', 2, 15);
+          ctx.fillStyle = 'rgba(102, 204, 0, 0.7)';
+          ctx.fillText('AntiTheftGuard,Guest@2026', 4, 17);
+          components.push(canvas.toDataURL());
+        }
+
+        // 2) WebGL Hardware Renderer
+        try {
+          const gl = document.createElement('canvas').getContext('webgl');
+          if (gl) {
+            const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+            if (debugInfo) {
+              components.push(gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL));
+              components.push(gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL));
+            }
+          }
+        } catch (_) {}
+
+        // 3) Screen & Viewport traits
+        components.push(`${screen.width}x${screen.height}x${screen.colorDepth}`);
+        components.push(`pixelRatio:${window.devicePixelRatio || 1}`);
+
+        // 4) System & Navigator traits
+        components.push(navigator.userAgent || '');
+        components.push(navigator.language || '');
+        components.push((navigator.languages || []).join(','));
+        components.push(`cpu:${navigator.hardwareConcurrency || 0}`);
+        components.push(`mem:${navigator.deviceMemory || 0}`);
+
+        // 5) Timezone
+        try {
+          components.push(Intl.DateTimeFormat().resolvedOptions().timeZone || '');
+        } catch (_) {}
+
+        // SHA-256 Hash
+        const rawString = components.join('###');
+        const msgBuffer = new TextEncoder().encode(rawString);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        return `fp_${hashHex.substring(0, 32)}`;
+      } catch (e) {
+        console.warn('Fingerprint fallback generation:', e);
+        // Fallback simple hash
+        let fallback = 'fb_' + (screen.width * screen.height) + '_' + navigator.userAgent.length;
+        return fallback;
+      }
+    }
+
+    // --- 3. Multi-tier Storage Layer (IndexedDB + localStorage) ---
+    const DB_NAME = 'ATG_Guest_DB';
+    const DB_STORE = 'access_locks';
+
+    function openIndexedDB() {
+      return new Promise((resolve, reject) => {
+        const req = indexedDB.open(DB_NAME, 1);
+        req.onupgradeneeded = (e) => {
+          const db = e.target.result;
+          if (!db.objectStoreNames.contains(DB_STORE)) {
+            db.createObjectStore(DB_STORE, { keyPath: 'key' });
+          }
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+    }
+
+    async function getIdbLock(key) {
+      try {
+        const db = await openIndexedDB();
+        return new Promise((resolve) => {
+          const tx = db.transaction(DB_STORE, 'readonly');
+          const store = tx.objectStore(DB_STORE);
+          const req = store.get(key);
+          req.onsuccess = () => resolve(req.result ? req.result.timestamp : null);
+          req.onerror = () => resolve(null);
+        });
+      } catch (_) {
+        return null;
+      }
+    }
+
+    async function setIdbLock(key, timestamp) {
+      try {
+        const db = await openIndexedDB();
+        return new Promise((resolve) => {
+          const tx = db.transaction(DB_STORE, 'readwrite');
+          const store = tx.objectStore(DB_STORE);
+          store.put({ key, timestamp });
+          tx.oncomplete = () => resolve(true);
+          tx.onerror = () => resolve(false);
+        });
+      } catch (_) {}
+    }
+
+    // --- 4. Monthly Access Verification (이중 잠금 검증) ---
+    async function checkMonthlyAccessStatus(fingerprint, deviceId) {
+      const lockKey = `lock_${fingerprint}_${deviceId}`;
+      const now = Date.now();
+
+      // 1) LocalStorage Check
+      const localTs = parseInt(localStorage.getItem(lockKey) || '0', 10);
+      if (localTs > 0 && (now - localTs) < THIRTY_DAYS_MS) {
+        return { locked: true, lastAccessed: localTs };
+      }
+
+      // 2) IndexedDB Check (시크릿창 우회 방지용 로컬 백업)
+      const idbTs = await getIdbLock(lockKey);
+      if (idbTs && (now - idbTs) < THIRTY_DAYS_MS) {
+        localStorage.setItem(lockKey, idbTs.toString());
+        return { locked: true, lastAccessed: idbTs };
+      }
+
+      // 3) Firestore Server Check (원격 핑거프린트 이력 조회)
+      try {
+        const firestoreDocId = `${fingerprint}_${deviceId}`;
+        const res = await fetch(getFirestoreUrl(`guest_access/${firestoreDocId}`));
+        if (res.ok) {
+          const doc = await res.json();
+          const data = parseFirestoreDoc(doc);
+          if (data && data.lastAccessed) {
+            const serverTs = parseInt(data.lastAccessed, 10);
+            if (now - serverTs < THIRTY_DAYS_MS) {
+              // 로컬에도 동기화
+              localStorage.setItem(lockKey, serverTs.toString());
+              await setIdbLock(lockKey, serverTs);
+              return { locked: true, lastAccessed: serverTs };
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('Firestore server lock check error:', e);
+      }
+
+      return { locked: false, lastAccessed: null };
+    }
+
+    async function recordAccessAttempt(fingerprint, deviceId) {
+      const now = Date.now();
+      const lockKey = `lock_${fingerprint}_${deviceId}`;
+
+      // 1) LocalStorage 저장
+      localStorage.setItem(lockKey, now.toString());
+
+      // 2) IndexedDB 저장
+      await setIdbLock(lockKey, now);
+
+      // 3) Firestore 서버 저장 (Patch/Upsert)
+      try {
+        const firestoreDocId = `${fingerprint}_${deviceId}`;
+        await fetch(getFirestoreUrl(`guest_access/${firestoreDocId}`), {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fields: {
+              fingerprint: { stringValue: fingerprint },
+              deviceId: { stringValue: deviceId },
+              lastAccessed: { integerValue: now.toString() },
+              lastAccessedIso: { stringValue: new Date(now).toISOString() }
+            }
+          })
+        });
+      } catch (e) {
+        console.warn('Failed to record server lock:', e);
+      }
+    }
+
+    // --- 5. Leaflet Map Setup ---
+    const map = L.map('map', {
+      zoomControl: true,
+      attributionControl: false
+    }).setView([37.5665, 126.9780], 14);
+
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19
+    }).addTo(map);
+
+    let currentMarker = null;
+    let currentCircle = null;
+    let clientFingerprint = '';
+    let currentDeviceId = '';
+    let availableDevices = [];
+
+    // --- 6. UI Modal Controls ---
+    function showModal(modalId) {
+      document.getElementById('modal-ready').style.display = 'none';
+      document.getElementById('modal-locked').style.display = 'none';
+      document.getElementById('modal-loading').style.display = 'none';
+      if (modalId) {
+        document.getElementById(modalId).style.display = 'block';
+      }
+    }
+
+    function formatDate(ts) {
+      const d = new Date(ts);
+      return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    }
+
+    // --- 7. Main Initialization ---
+    async function initGuestDashboard() {
+      // 1) 핑거프린트 생성
+      clientFingerprint = await generateDeviceFingerprint();
+
+      // 2) 등록된 기기 목록 로드
+      await loadDeviceList();
+
+      // 3) 기기별 월 1회 상태 검증
+      await evaluateDeviceAccess();
+    }
+
+    async function loadDeviceList() {
+      try {
+        const res = await fetch(getFirestoreUrl('devices'));
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.documents) {
+            availableDevices = data.documents.map(d => parseFirestoreDoc(d)).filter(Boolean);
+          }
+        }
+      } catch (e) {
+        console.warn('Device fetch error:', e);
+      }
+
+      const selectEl = document.getElementById('device-select');
+      const urlParams = new URLSearchParams(window.location.search);
+      const paramDevice = urlParams.get('device');
+
+      if (availableDevices.length > 0) {
+        selectEl.innerHTML = availableDevices.map(d => {
+          const devName = d.deviceName ? ` (${d.deviceName})` : '';
+          return `<option value="${d.deviceId}">${d.deviceId}${devName}</option>`;
+        }).join('');
+
+        const matched = availableDevices.find(d => d.deviceId === paramDevice);
+        if (matched) {
+          currentDeviceId = matched.deviceId;
+          selectEl.value = currentDeviceId;
+        } else {
+          currentDeviceId = availableDevices[0].deviceId;
+          selectEl.value = currentDeviceId;
+        }
+      } else if (paramDevice) {
+        currentDeviceId = paramDevice;
+        selectEl.innerHTML = `<option value="${paramDevice}">${paramDevice}</option>`;
+      } else {
+        currentDeviceId = 'kmk';
+        selectEl.innerHTML = `<option value="kmk">kmk</option>`;
+      }
+    }
+
+    async function evaluateDeviceAccess() {
+      if (!currentDeviceId) return;
+
+      const deviceObj = availableDevices.find(d => d.deviceId === currentDeviceId);
+      const displayName = deviceObj && deviceObj.deviceName ? `${currentDeviceId} (${deviceObj.deviceName})` : currentDeviceId;
+      document.getElementById('ready-device-name').innerText = displayName;
+
+      // 이전 마커/인포 카드 제거
+      if (currentMarker) { map.removeLayer(currentMarker); currentMarker = null; }
+      if (currentCircle) { map.removeLayer(currentCircle); currentCircle = null; }
+      document.getElementById('bottom-info-card').style.display = 'none';
+
+      // 핑거프린트 + 기기 ID 조합으로 한 달 이내 조회 이력 검사
+      showModal('modal-loading');
+      const status = await checkMonthlyAccessStatus(clientFingerprint, currentDeviceId);
+
+      if (status.locked) {
+        // 이미 이번 달 조회를 소진함 -> 잠금 모달 표시
+        document.getElementById('locked-last-time').innerText = formatDate(status.lastAccessed);
+        document.getElementById('locked-next-time').innerText = formatDate(status.lastAccessed + THIRTY_DAYS_MS);
+        showModal('modal-locked');
+      } else {
+        // 이번 달 조회 가능 -> 준비 모달 표시
+        showModal('modal-ready');
+      }
+    }
+
+    async function onDeviceChanged() {
+      const selectEl = document.getElementById('device-select');
+      currentDeviceId = selectEl.value;
+      await evaluateDeviceAccess();
+    }
+
+    // --- 8. Confirm & Fetch Current Location ---
+    async function confirmAndCheckLocation() {
+      showModal('modal-loading');
+
+      try {
+        // 1) 최신 GPS 1건만 단독 쿼리 (과거 궤적 배제, limit: 1)
+        const queryRes = await fetch(getFirestoreUrl(`devices/${currentDeviceId}:runQuery`), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            structuredQuery: {
+              from: [{ collectionId: 'gps_batches' }],
+              orderBy: [{ field: { fieldPath: 'startTime' }, direction: 'DESCENDING' }],
+              limit: 1
+            }
+          })
+        });
+
+        if (!queryRes.ok) {
+          throw new Error(`HTTP ${queryRes.status}`);
+        }
+
+        const queryData = await queryRes.json();
+        const batches = queryData.filter(i => i.document).map(i => parseFirestoreDoc(i.document));
+
+        if (!batches || batches.length === 0 || !batches[0].points || batches[0].points.length === 0) {
+          alert('기기의 최신 GPS 기록이 아직 없습니다. 앱에서 추적이 동작 중인지 확인해 주세요.');
+          showModal('modal-ready');
+          return;
+        }
+
+        // 배치 내 가장 마지막(최신) 포인트 선택
+        const points = batches[0].points;
+        const latestPoint = points[points.length - 1];
+
+        // 2) 기기 최신 메타데이터 (배터리 등) 보강
+        let batteryLevel = latestPoint.batteryLevel;
+        let deviceName = currentDeviceId;
+        try {
+          const devRes = await fetch(getFirestoreUrl(`devices/${currentDeviceId}`));
+          if (devRes.ok) {
+            const devDoc = await devRes.json();
+            const devData = parseFirestoreDoc(devDoc);
+            if (devData) {
+              if (devData.batteryLevel !== undefined) batteryLevel = devData.batteryLevel;
+              if (devData.deviceName) deviceName = devData.deviceName;
+            }
+          }
+        } catch (_) {}
+
+        // 3) 이번 달 조회 완료 기록 (로컬 스토리지 & Firestore 영구 락)
+        await recordAccessAttempt(clientFingerprint, currentDeviceId);
+
+        // 4) 지도에 펄싱 핀 및 오차 반경 표시
+        renderCurrentLocationOnMap(latestPoint, deviceName, batteryLevel);
+
+        // 5) 역지오코딩 (도로명 주소 변환)
+        reverseGeocodeAddress(latestPoint.latitude, latestPoint.longitude);
+
+        // 6) 모달 닫고 하단 정보 카드 표시
+        showModal(null);
+
+      } catch (err) {
+        console.error('Failed to query location:', err);
+        alert('현재 위치 정보를 가져오는데 실패했습니다. 잠시 후 다시 시도해 주세요.');
+        showModal('modal-ready');
+      }
+    }
+
+    function renderCurrentLocationOnMap(pt, deviceName, batteryLevel) {
+      const lat = pt.latitude;
+      const lng = pt.longitude;
+      const accuracy = pt.accuracy || 15;
+
+      // Custom Pulse Icon
+      const pulseIcon = L.divIcon({
+        className: '',
+        html: `
+          <div class="pulse-marker-wrapper">
+            <div class="pulse-marker-ring"></div>
+            <div class="pulse-marker-core"></div>
+          </div>
+        `,
+        iconSize: [32, 32],
+        iconAnchor: [16, 16]
+      });
+
+      if (currentMarker) map.removeLayer(currentMarker);
+      if (currentCircle) map.removeLayer(currentCircle);
+
+      currentMarker = L.marker([lat, lng], { icon: pulseIcon }).addTo(map);
+      currentCircle = L.circle([lat, lng], {
+        radius: Math.max(accuracy, 15),
+        color: '#3b82f6',
+        fillColor: '#3b82f6',
+        fillOpacity: 0.12,
+        weight: 1.5,
+        dashArray: '4, 4'
+      }).addTo(map);
+
+      map.flyTo([lat, lng], 16, { animate: true, duration: 1.2 });
+
+      // 하단 카드 채우기
+      document.getElementById('info-device-name').innerText = `${currentDeviceId} (${deviceName})`;
+      document.getElementById('info-battery').innerHTML = `<i class="fa-solid fa-battery-half"></i> <span>${batteryLevel ?? '--'}%</span>`;
+      document.getElementById('info-time').innerText = formatDate(pt.timestamp);
+      document.getElementById('info-accuracy').innerText = `오차 약 ±${Math.round(accuracy)}m 이내`;
+      document.getElementById('bottom-info-card').style.display = 'block';
+    }
+
+    async function reverseGeocodeAddress(lat, lng) {
+      const addrEl = document.getElementById('info-address');
+      try {
+        const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`, {
+          headers: { 'Accept-Language': 'ko' }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.display_name) {
+            addrEl.innerText = data.display_name;
+            return;
+          }
+        }
+      } catch (_) {}
+      addrEl.innerText = `위도 ${lat.toFixed(6)}, 경도 ${lng.toFixed(6)}`;
+    }
+
+    // Page Load
+    window.addEventListener('DOMContentLoaded', initGuestDashboard);
+  </script>
+</body>
+</html>
