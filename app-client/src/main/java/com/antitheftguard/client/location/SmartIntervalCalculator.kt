@@ -59,7 +59,7 @@ object SmartIntervalCalculator {
             LocationConfig(
                 interval = INTERVAL_STATIONARY,
                 priority = Priority.PRIORITY_HIGH_ACCURACY,
-                minUpdateDistanceMeters = 15f
+                minUpdateDistanceMeters = 0f
             )
         }
     }
