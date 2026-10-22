@@ -170,12 +170,12 @@ class GpsLoggingService : Service() {
                         Log.d(TAG, "⏰ [Watchdog] 시간 초과 버퍼 자동 플러시 완료")
                     }
 
-                    // 2) 발신 정체 방지 감시 (마지막 발신 후 4분 경과 시)
+                    // 2) 발신 정체 방지 감시 (마지막 발신 후 11분 경과 시 - 정지 5개 10분 주기 고려)
                     val now = System.currentTimeMillis()
                     val lastSent = lastGpsSentTimeFlow.value
                     val elapsedSinceLastSent = now - lastSent
 
-                    if (lastSent > 0L && elapsedSinceLastSent >= 240_000L) {
+                    if (lastSent > 0L && elapsedSinceLastSent >= 660_000L) {
                         Log.w(TAG, "⏰ [Watchdog] 위치 발신 정체 감지 (${elapsedSinceLastSent / 1000}초 경과) -> 즉시 위치 요청 및 상태 갱신")
                         triggerImmediateLocationSend()
 
@@ -346,6 +346,14 @@ class GpsLoggingService : Service() {
                     if (!processResult.isStationary && processedPoint.accuracy > 500f) {
                         Log.d(TAG, "극단적 오차 좌표 드랍 (accuracy=${processedPoint.accuracy}m > 500m)")
                         continue
+                    }
+
+                    if (processResult.isBreakout) {
+                        // 앵커 탈출(이동 시작) 시 버퍼에 대기 중이던 이전 정지 포인트들을 즉시 플러시
+                        val flushed = gpsBatcher.flushNow()
+                        if (flushed) {
+                            Log.d(TAG, "🚀 [앵커 탈출] 정지 앵커 벗어남 -> 대기 버퍼 즉시 플러시")
+                        }
                     }
 
                     if (processResult.isStationary) {
@@ -612,6 +620,15 @@ class GpsLoggingService : Service() {
                 Log.d(TAG, "하드웨어 모션 상태 변경: isMotionActive=$isMotionActive -> $moving")
                 isMotionActive = moving
                 stationaryAnchorManager.updateMotionState(moving)
+
+                // 정지에서 이동으로 모드 전환 시, 버퍼에 대기 중이던 정지 좌표들을 즉시 플러시하여 서버에 전송
+                if (moving) {
+                    val flushed = gpsBatcher.flushNow()
+                    if (flushed) {
+                        Log.d(TAG, "🚀 [모션 전환 플러시] 정지 -> 이동 전환으로 대기 버퍼 즉시 플러시 완료")
+                    }
+                }
+
                 val newConfig = SmartIntervalCalculator.getConfig(
                     currentSpeed,
                     isCharging,

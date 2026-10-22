@@ -1556,10 +1556,10 @@
           map.fitBounds(L.latLngBounds(validLivePts.map(p => [p.latitude, p.longitude])), { padding: [40, 40] });
         }
         document.getElementById('device-state-tag').innerHTML = 
-          `수신 궤적: <strong style="color: #34d399">총 ${cachedAllPoints.length.toLocaleString()}개</strong> 📍 <span style="color: #64748b; margin: 0 4px;">|</span> 간격: <strong style="color: #fbbf24">이동 5초/정지 180초</strong>`;
+          `수신 궤적: <strong style="color: #34d399">총 ${cachedAllPoints.length.toLocaleString()}개</strong> 📍 <span style="color: #64748b; margin: 0 4px;">|</span> 간격: <strong style="color: #fbbf24">이동 5초 / 정지 2분(10분 묶음)</strong>`;
       } else {
         document.getElementById('device-state-tag').innerHTML = 
-          `<span style="color: #94a3b8;">GPS 데이터 대기 중...</span> <span style="color: #64748b; margin: 0 4px;">|</span> 간격: <strong style="color: #fbbf24">이동 5초/정지 180초</strong>`;
+          `<span style="color: #94a3b8;">GPS 데이터 대기 중...</span> <span style="color: #64748b; margin: 0 4px;">|</span> 간격: <strong style="color: #fbbf24">이동 5초 / 정지 2분(10분 묶음)</strong>`;
       }
       if (currentDeviceId) {
         syncDeviceData(currentDeviceId);
@@ -1803,10 +1803,10 @@
 
           setOnlineStatus(true, "실시간");
           document.getElementById('device-state-tag').innerHTML = 
-            `수신 궤적: <strong style="color: #34d399">총 ${cachedAllPoints.length.toLocaleString()}개</strong> 📍 <span style="color: #64748b; margin: 0 4px;">|</span> 간격: <strong style="color: #fbbf24">이동 5초/정지 180초</strong>`;
+            `수신 궤적: <strong style="color: #34d399">총 ${cachedAllPoints.length.toLocaleString()}개</strong> 📍 <span style="color: #64748b; margin: 0 4px;">|</span> 간격: <strong style="color: #fbbf24">이동 5초 / 정지 2분(10분 묶음)</strong>`;
         } else {
           document.getElementById('device-state-tag').innerHTML = 
-            `<span style="color: #94a3b8;">GPS 데이터 대기 중...</span> <span style="color: #64748b; margin: 0 4px;">|</span> 간격: <strong style="color: #fbbf24">이동 5초/정지 180초</strong>`;
+            `<span style="color: #94a3b8;">GPS 데이터 대기 중...</span> <span style="color: #64748b; margin: 0 4px;">|</span> 간격: <strong style="color: #fbbf24">이동 5초 / 정지 2분(10분 묶음)</strong>`;
         }
 
         // 배터리 및 마지막 수신 시간 단일 업데이트

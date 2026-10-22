@@ -19,9 +19,9 @@ class GpsBatcher(private val deviceId: String) {
         val now = System.currentTimeMillis()
         val isMoving = point.speed > 1.5f
         // 이동 중: 12개 포인트 또는 1분 경과 시 전송 (초정밀 궤적)
-        // 정지 중: 5개 포인트 또는 3분 경과 시 전송 (네트워크/절전 및 실시간성 보장)
+        // 정지 중: 5개 포인트 또는 10분 경과 시 전송 (극저전력 모뎀 절전)
         val countLimit = if (isMoving) 12 else 5
-        val timeLimit = if (isMoving) 60_000L else 180_000L
+        val timeLimit = if (isMoving) 60_000L else 600_000L
 
         if (buffer.size >= countLimit || now - batchStartTime.get() >= timeLimit) {
             emitBatch(now)
@@ -29,7 +29,7 @@ class GpsBatcher(private val deviceId: String) {
     }
 
     /**
-     * 지정된 시간(이동 1분, 정지 3분)이 경과한 미전송 버퍼가 있다면 즉시 배치로 방출합니다.
+     * 지정된 시간(이동 1분, 정지 10분)이 경과한 미전송 버퍼가 있다면 즉시 배치로 방출합니다.
      * GpsLoggingService의 주기적 타이커(Watchdog)에서 호출됩니다.
      */
     @Synchronized
@@ -37,7 +37,7 @@ class GpsBatcher(private val deviceId: String) {
         if (buffer.isEmpty()) return false
         val now = System.currentTimeMillis()
         val hasMovingPoint = buffer.any { it.speed > 1.5f }
-        val timeLimit = if (hasMovingPoint) 60_000L else 180_000L
+        val timeLimit = if (hasMovingPoint) 60_000L else 600_000L
 
         if (now - batchStartTime.get() >= timeLimit) {
             emitBatch(now)

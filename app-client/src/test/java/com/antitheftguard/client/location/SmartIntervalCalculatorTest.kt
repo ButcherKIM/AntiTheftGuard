@@ -6,23 +6,23 @@ import org.junit.Test
 
 class SmartIntervalCalculatorTest {
     @Test
-    fun `정지 상태(isMotionActive=false)이거나 정지 확정(isStationaryConfirmed=true)일 때는 180초 초절전 주기와 기지국 모드를 반환한다`() {
+    fun `정지 상태(isMotionActive=false)이거나 정지 확정(isStationaryConfirmed=true)일 때는 120초(2분) 주기와 고정밀 모드를 반환한다`() {
         // 모션 센서가 정지 중이면 실내 GPS 속도 튐(3.0 m/s)이나 충전 여부와 무관하게 정지 유지
-        assertEquals(180_000L, SmartIntervalCalculator.calculate(1.0f, false, isMotionActive = false))
-        assertEquals(180_000L, SmartIntervalCalculator.calculate(3.0f, false, isMotionActive = false))
-        assertEquals(180_000L, SmartIntervalCalculator.calculate(3.0f, true, isMotionActive = false))
+        assertEquals(120_000L, SmartIntervalCalculator.calculate(1.0f, false, isMotionActive = false))
+        assertEquals(120_000L, SmartIntervalCalculator.calculate(3.0f, false, isMotionActive = false))
+        assertEquals(120_000L, SmartIntervalCalculator.calculate(3.0f, true, isMotionActive = false))
         
         val config = SmartIntervalCalculator.getConfig(1.0f, false, isMotionActive = false)
-        assertEquals(180_000L, config.interval)
+        assertEquals(120_000L, config.interval)
         assertEquals(Priority.PRIORITY_HIGH_ACCURACY, config.priority)
         assertEquals(0f, config.minUpdateDistanceMeters)
     }
 
     @Test
-    fun `정지 확정(isStationaryConfirmed=true) 상태에서는 180초 주기 유지`() {
-        assertEquals(180_000L, SmartIntervalCalculator.calculate(0.0f, false, isMotionActive = true, isStationaryConfirmed = true))
+    fun `정지 확정(isStationaryConfirmed=true) 상태에서는 120초 주기 유지`() {
+        assertEquals(120_000L, SmartIntervalCalculator.calculate(0.0f, false, isMotionActive = true, isStationaryConfirmed = true))
         val config = SmartIntervalCalculator.getConfig(0.0f, false, isMotionActive = true, isStationaryConfirmed = true)
-        assertEquals(180_000L, config.interval)
+        assertEquals(120_000L, config.interval)
         assertEquals(Priority.PRIORITY_HIGH_ACCURACY, config.priority)
         assertEquals(0f, config.minUpdateDistanceMeters)
     }

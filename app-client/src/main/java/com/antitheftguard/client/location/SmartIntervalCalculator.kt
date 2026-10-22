@@ -10,7 +10,7 @@ data class LocationConfig(
 
 object SmartIntervalCalculator {
     const val INTERVAL_MOVING = 5_000L        // 5초
-    const val INTERVAL_STATIONARY = 180_000L  // 180초 (정지 시 극저전력 스탠바이)
+    const val INTERVAL_STATIONARY = 120_000L  // 120초 (2분, 정지 시 5개 묶음 10분 전송)
     const val SPEED_THRESHOLD = 1.5f          // m/s (~5.4 km/h)
 
     /** 이동 여부를 판단합니다. */
