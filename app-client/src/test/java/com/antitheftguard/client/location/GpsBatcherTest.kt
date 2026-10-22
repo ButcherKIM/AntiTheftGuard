@@ -7,6 +7,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -48,6 +49,30 @@ class GpsBatcherTest {
 
         assertEquals(1, batches.size)
         assertEquals(5, batches[0].points.size)
+        job.cancel()
+    }
+
+    @Test
+    fun `flushNow 호출 시 대기 중인 버퍼가 즉시 방출된다`() = runTest {
+        val batcher = GpsBatcher("test_device")
+        val batches = mutableListOf<GpsBatch>()
+        
+        val job = launch(UnconfinedTestDispatcher()) {
+            batcher.batchFlow.collect {
+                batches.add(it)
+            }
+        }
+        
+        // 이동 포인트 3개 추가 (12개 미만이므로 아직 방출 안 됨)
+        for (i in 1..3) {
+            batcher.addPoint(GpsPoint(37.5, 127.0, 5f, 3.0f, System.currentTimeMillis(), 100))
+        }
+        assertEquals(0, batches.size)
+
+        val flushed = batcher.flushNow()
+        assertTrue(flushed)
+        assertEquals(1, batches.size)
+        assertEquals(3, batches[0].points.size)
         job.cancel()
     }
 

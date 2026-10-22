@@ -152,10 +152,41 @@ class GpsLoggingService : Service() {
         setupLocationCallback()
         startLocationUpdates()
         collectBatches()
+        startWatchdogTicker()
         registerBatteryReceiver()
         listenForRemoteCommands()
         ActivityTransitionManager.startTracking(this)
         triggerImmediateLocationSend()
+    }
+
+    private fun startWatchdogTicker() {
+        serviceScope.launch {
+            while (isActive) {
+                delay(30_000L) // 30초마다 주기적 점검
+                try {
+                    // 1) 시간 초과 미전송 버퍼가 있다면 즉시 배치 플러시
+                    val flushed = gpsBatcher.flushIfTimeExceeded()
+                    if (flushed) {
+                        Log.d(TAG, "⏰ [Watchdog] 시간 초과 버퍼 자동 플러시 완료")
+                    }
+
+                    // 2) 발신 정체 방지 감시 (마지막 발신 후 4분 경과 시)
+                    val now = System.currentTimeMillis()
+                    val lastSent = lastGpsSentTimeFlow.value
+                    val elapsedSinceLastSent = now - lastSent
+
+                    if (lastSent > 0L && elapsedSinceLastSent >= 240_000L) {
+                        Log.w(TAG, "⏰ [Watchdog] 위치 발신 정체 감지 (${elapsedSinceLastSent / 1000}초 경과) -> 즉시 위치 요청 및 상태 갱신")
+                        triggerImmediateLocationSend()
+
+                        // 기기 온라인 상태 및 배터리 레벨 핑 전송 (위치 fix 대기 중이어도 온라인 유지)
+                        firestoreManager.updateDeviceStatus(deviceId, now, getBatteryLevel())
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "⏰ [Watchdog] 점검 루프 예외 발생", e)
+                }
+            }
+        }
     }
 
     private var lastImmediateLocationSentTime: Long = 0L
