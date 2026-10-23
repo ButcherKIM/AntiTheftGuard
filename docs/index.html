@@ -1512,12 +1512,13 @@
           map.fitBounds(L.latLngBounds(dailyHistoryPoints.map(p => [p.latitude, p.longitude])), { padding: [40, 40] });
         }
 
-        // 텔레메트리 및 상/하단 바 갱신 (일별 조회 1줄 단일화: 조회 : YYYY-MM-DD, 📍 개수 (시작 ~ 종료))
+        // 텔레메트리 및 상/하단 바 갱신 (일별 조회 1줄 단일화: 조회 : YYYY-MM-DD, 시간 및 📍 개수 (시작 ~ 종료))
         const yymmdd = dateStr.replace(/-/g, '').slice(2);
         setOnlineStatus(true, yymmdd);
         updateHeaderDeviceInfo(deviceId);
+        const dailyDur = formatPointsDuration(dailyHistoryPoints, false);
         document.getElementById('device-state-tag').innerHTML = 
-          `조회 : <strong style="color: #fbbf24">${dateStr}</strong>,  📍 <strong style="color: #34d399">${dailyHistoryPoints.length.toLocaleString()}개</strong> <span style="color: #94a3b8; font-size: 0.8rem;">(${sTime} ~ ${eTime})</span>`;
+          `조회 : <strong style="color: #fbbf24">${dateStr}</strong>,  ⏱️ <strong style="color: #34d399">${dailyDur}</strong> <span style="color: #94a3b8; font-size: 0.8rem;">(${sTime} ~ ${eTime}, 총 ${dailyHistoryPoints.length.toLocaleString()}개 📍)</span>`;
 
         document.getElementById('val-speed').innerText = `총 ${dailyHistoryPoints.length.toLocaleString()}개`;
         document.getElementById('val-accuracy').innerText = `일별 롤업`;
@@ -1555,8 +1556,9 @@
         if (validLivePts.length > 1) {
           map.fitBounds(L.latLngBounds(validLivePts.map(p => [p.latitude, p.longitude])), { padding: [40, 40] });
         }
+        const durText = formatPointsDuration(cachedAllPoints, true);
         document.getElementById('device-state-tag').innerHTML = 
-          `수신 궤적: <strong style="color: #34d399">총 ${cachedAllPoints.length.toLocaleString()}개</strong> 📍 <span style="color: #64748b; margin: 0 4px;">|</span> 간격: <strong style="color: #fbbf24">이동 5초 / 정지 2분(10분 묶음)</strong>`;
+          `수신 궤적: <strong style="color: #34d399">${durText}</strong> <span style="color: #94a3b8; font-size: 0.8rem;">(총 ${cachedAllPoints.length.toLocaleString()}개 📍)</span> <span style="color: #64748b; margin: 0 4px;">|</span> 간격: <strong style="color: #fbbf24">이동 5초 / 정지 2분(10분 묶음)</strong>`;
       } else {
         document.getElementById('device-state-tag').innerHTML = 
           `<span style="color: #94a3b8;">GPS 데이터 대기 중...</span> <span style="color: #64748b; margin: 0 4px;">|</span> 간격: <strong style="color: #fbbf24">이동 5초 / 정지 2분(10분 묶음)</strong>`;
@@ -1627,6 +1629,41 @@
       return `<div style="display: flex; align-items: baseline; gap: 4px; white-space: nowrap; overflow: hidden;">` +
              `<span style="font-size: 0.95rem; font-weight: 700; line-height: 1.2;">${timeStr}</span>` +
              `<span style="font-size: 0.75rem; color: #94a3b8; font-weight: normal;">(${agoStr})</span></div>`;
+    }
+
+    // 궤적 데이터의 시작-끝 타임스탬프 기반 시간 포맷팅 함수 (몇시간 몇분)
+    function formatPointsDuration(points, isLive = true) {
+      if (!points || points.length === 0) return isLive ? '최근 1분 미만' : '0분';
+      let minTs = Infinity;
+      let maxTs = -Infinity;
+      for (let i = 0; i < points.length; i++) {
+        const ts = points[i].timestamp;
+        if (ts && ts > 0) {
+          if (ts < minTs) minTs = ts;
+          if (ts > maxTs) maxTs = ts;
+        }
+      }
+      if (minTs === Infinity || maxTs <= minTs) {
+        return isLive ? '최근 1분 미만' : '1분 미만';
+      }
+      const diffMs = maxTs - minTs;
+      const totalMinutes = Math.round(diffMs / 60000);
+
+      if (totalMinutes < 1) {
+        return isLive ? '최근 1분 미만' : '1분 미만';
+      }
+      const hours = Math.floor(totalMinutes / 60);
+      const minutes = totalMinutes % 60;
+
+      if (isLive) {
+        if (hours > 0 && minutes > 0) return `최근 ${hours}시간 ${minutes}분간`;
+        if (hours > 0) return `최근 ${hours}시간 동안`;
+        return `최근 ${minutes}분간`;
+      } else {
+        if (hours > 0 && minutes > 0) return `${hours}시간 ${minutes}분`;
+        if (hours > 0) return `${hours}시간`;
+        return `${minutes}분`;
+      }
     }
 
     // 1초마다 '방금 전 / N초 전' 상대 시간을 부드럽게 갱신
@@ -1802,8 +1839,9 @@
           }
 
           setOnlineStatus(true, "실시간");
+          const durText = formatPointsDuration(cachedAllPoints, true);
           document.getElementById('device-state-tag').innerHTML = 
-            `수신 궤적: <strong style="color: #34d399">총 ${cachedAllPoints.length.toLocaleString()}개</strong> 📍 <span style="color: #64748b; margin: 0 4px;">|</span> 간격: <strong style="color: #fbbf24">이동 5초 / 정지 2분(10분 묶음)</strong>`;
+            `수신 궤적: <strong style="color: #34d399">${durText}</strong> <span style="color: #94a3b8; font-size: 0.8rem;">(총 ${cachedAllPoints.length.toLocaleString()}개 📍)</span> <span style="color: #64748b; margin: 0 4px;">|</span> 간격: <strong style="color: #fbbf24">이동 5초 / 정지 2분(10분 묶음)</strong>`;
         } else {
           document.getElementById('device-state-tag').innerHTML = 
             `<span style="color: #94a3b8;">GPS 데이터 대기 중...</span> <span style="color: #64748b; margin: 0 4px;">|</span> 간격: <strong style="color: #fbbf24">이동 5초 / 정지 2분(10분 묶음)</strong>`;
