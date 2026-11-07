@@ -73,3 +73,32 @@ enum class StreamCommand {
     START_STREAM,
     STOP_STREAM
 }
+
+/** 크래시(예외) 로그 모델 */
+@Serializable
+data class CrashLog(
+    val deviceId: String = "",
+    val timestamp: Long = 0L,
+    val exceptionType: String = "",
+    val message: String = "",
+    val stackTrace: String = "",
+    val threadName: String = "",
+    val appVersion: String = "",
+    val osVersion: String = "",
+    val deviceModel: String = ""
+)
+
+/** OS 프로세스 종료 사유 모델 (Android 11+ ApplicationExitInfo 기반) */
+@Serializable
+data class ExitLog(
+    val deviceId: String = "",
+    val timestamp: Long = 0L,
+    val reasonCode: Int = 0,
+    val reasonDescription: String = "",
+    val importance: Int = 0,
+    val description: String = "",
+    val pssKb: Long = 0L,
+    val rssKb: Long = 0L,
+    val appVersion: String = "",
+    val osVersion: String = ""
+)

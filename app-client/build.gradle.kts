@@ -13,8 +13,8 @@ android {
         applicationId = "com.antitheftguard.client"
         minSdk = 26
         targetSdk = 34
-        versionCode = 21
-        versionName = "1.4.0"
+        versionCode = 22
+        versionName = "1.4.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
             abiFilters += listOf("arm64-v8a")

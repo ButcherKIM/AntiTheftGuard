@@ -146,4 +146,31 @@ class FirestoreManager {
             pToken
         } else null
     }
+
+    /** 크래시 로그 저장 (비동기) */
+    suspend fun saveCrashLog(deviceId: String, crashLog: CrashLog): Result<Unit> = runCatching {
+        db.collection("devices").document(deviceId)
+            .collection("crash_logs").document(crashLog.timestamp.toString())
+            .set(crashLog).await()
+    }
+
+    /** 크래시 로그 동기 전송 (앱 종료 직전 최대 timeoutMs 동안 대기) */
+    fun saveCrashLogSync(deviceId: String, crashLog: CrashLog, timeoutMs: Long = 3000L): Boolean {
+        return try {
+            val task = db.collection("devices").document(deviceId)
+                .collection("crash_logs").document(crashLog.timestamp.toString())
+                .set(crashLog)
+            com.google.android.gms.tasks.Tasks.await(task, timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS)
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /** OS 프로세스 종료 사유 저장 (비동기) */
+    suspend fun saveExitLog(deviceId: String, exitLog: ExitLog): Result<Unit> = runCatching {
+        db.collection("devices").document(deviceId)
+            .collection("exit_logs").document(exitLog.timestamp.toString())
+            .set(exitLog).await()
+    }
 }
