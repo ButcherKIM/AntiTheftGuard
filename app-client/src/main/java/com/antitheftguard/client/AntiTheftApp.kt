@@ -21,13 +21,26 @@ class AntiTheftApp : Application() {
         private const val KEY_LAST_EXIT_TIMESTAMP = "last_reported_exit_timestamp"
     }
 
-    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val firestoreManager = FirestoreManager()
+    private val appScope by lazy { CoroutineScope(SupervisorJob() + Dispatchers.IO) }
+    private val firestoreManager by lazy { FirestoreManager() }
 
     override fun onCreate() {
         super.onCreate()
-        initCrashHandler()
-        checkHistoricalExitReasons()
+        try {
+            com.google.firebase.FirebaseApp.initializeApp(this)
+        } catch (e: Exception) {
+            Log.e(TAG, "FirebaseApp 초기화 예외 (무시 가능)", e)
+        }
+        try {
+            initCrashHandler()
+        } catch (e: Exception) {
+            Log.e(TAG, "크래시 핸들러 초기화 실패", e)
+        }
+        try {
+            checkHistoricalExitReasons()
+        } catch (e: Exception) {
+            Log.e(TAG, "종료 이력 검사 실패", e)
+        }
     }
 
     private fun getAppVersion(): String {

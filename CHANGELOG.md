@@ -8,7 +8,8 @@
 
 | 버전 | 출시일 | 핵심 변경 사항 | APK 상태 |
 | :--- | :--- | :--- | :--- |
-| **v1.4.1** | 2026-11-07 | 원격 비정상 종료/크래시 자동 추적 시스템 구축 (UncaughtException 최후 유언장 로깅, Android 11+ ApplicationExitInfo 기반 LMK/시스템 강제 종료 추적, 배터리 소모 0%) | 🚀 최신 배포 중 |
+| **v1.4.2** | 2026-11-08 | Application 생성자 시점 Firebase 인스턴스 접근 크래시 완전 해결 (Lazy 지연 초기화 및 명시적 방어 코드, Firestore toMap 직렬화 안정화) | 🚀 최신 배포 중 |
+| **v1.4.1** | 2026-11-07 | 원격 비정상 종료/크래시 자동 추적 시스템 구축 (UncaughtException 최후 유언장 로깅, Android 11+ ApplicationExitInfo 기반 LMK/시스템 강제 종료 추적, 배터리 소모 0%) | 배포 완료 |
 | **v1.4.0** | 2026-10-22 | 정지 시 2분 주기 5개 묶음(10분) 모뎀 극저전력 전송, 모드 전환 즉시 플러시(Flush on State Change), 대시보드 궤적 경과시간(몇시간 몇분) 직관적 표기 | 배포 완료 |
 | **v1.3.9** | 2026-10-22 | 정지 시 180초 초절전 주기 유지하되 대기 버퍼 갇힘(Stall) 방지, 30초 주기 백그라운드 액티브 워치독 타이머 & 4분 정체 시 자동 생존 갱신 탑재 | 배포 완료 |
 | **v1.3.8** | 2026-10-14 | 표준 안드로이드 적응형 아이콘(Adaptive Icon) 전면 적용으로 런처별 원형/스퀘어클 왜곡 찌그러짐 완전 해결 | 배포 완료 |
@@ -34,6 +35,16 @@
 ---
 
 ## 🚀 상세 버전별 변경 내역
+
+### [v1.4.2] - 2026-11-08
+#### 🐛 Application 생성자 시점 Firebase 인스턴스 접근 크래시 완전 해결
+- **`FirestoreManager` 및 `AntiTheftApp` Lazy 지연 초기화**:
+  - `AntiTheftApp`의 프로퍼티로 `FirestoreManager()`를 즉시 생성하던 로직을 `by lazy`로 전환.
+  - `FirestoreManager` 내부의 `Firebase.firestore` 또한 `by lazy`로 전환하여, 안드로이드 `Application` 생성자 시점에 `FirebaseApp`이 아직 초기화되지 않아 발생하던 `IllegalStateException: Default FirebaseApp is not initialized` 즉시 크래시 결함을 완벽히 해결.
+- **`Application.onCreate()` 방어 코드 강화**:
+  - `FirebaseApp.initializeApp(this)` 명시적 선제 호출 및 로깅 초기화 블록 전체를 개별 try-catch로 격리하여, 로깅 시스템 오류로 인해 앱 시작이 막히는 문제를 원천 차단.
+- **Firestore `toMap()` 직렬화 보강**:
+  - `CrashLog` 및 `ExitLog` 모델에 `toMap()` 변환 함수를 추가하여 Firestore 데이터베이스 전송 시 직렬화 예외 가능성을 100% 제거.
 
 ### [v1.4.1] - 2026-11-07
 #### 🛡️ 원격 비정상 종료 및 크래시 자동 진단 로깅 시스템 구축

@@ -86,7 +86,19 @@ data class CrashLog(
     val appVersion: String = "",
     val osVersion: String = "",
     val deviceModel: String = ""
-)
+) {
+    fun toMap(): Map<String, Any> = mapOf(
+        "deviceId" to deviceId,
+        "timestamp" to timestamp,
+        "exceptionType" to exceptionType,
+        "message" to message,
+        "stackTrace" to stackTrace,
+        "threadName" to threadName,
+        "appVersion" to appVersion,
+        "osVersion" to osVersion,
+        "deviceModel" to deviceModel
+    )
+}
 
 /** OS 프로세스 종료 사유 모델 (Android 11+ ApplicationExitInfo 기반) */
 @Serializable
@@ -101,4 +113,17 @@ data class ExitLog(
     val rssKb: Long = 0L,
     val appVersion: String = "",
     val osVersion: String = ""
-)
+) {
+    fun toMap(): Map<String, Any> = mapOf(
+        "deviceId" to deviceId,
+        "timestamp" to timestamp,
+        "reasonCode" to reasonCode,
+        "reasonDescription" to reasonDescription,
+        "importance" to importance,
+        "description" to description,
+        "pssKb" to pssKb,
+        "rssKb" to rssKb,
+        "appVersion" to appVersion,
+        "osVersion" to osVersion
+    )
+}

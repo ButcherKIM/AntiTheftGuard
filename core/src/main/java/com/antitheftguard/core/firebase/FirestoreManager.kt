@@ -11,7 +11,7 @@ import java.util.UUID
 
 /** Firestore 데이터베이스와 통신하는 유틸리티 클래스 */
 class FirestoreManager {
-    private val db = Firebase.firestore
+    private val db by lazy { Firebase.firestore }
     
     suspend fun saveGpsBatch(deviceId: String, batch: GpsBatch): Result<Unit> = runCatching {
         db.collection("devices").document(deviceId)
@@ -151,7 +151,7 @@ class FirestoreManager {
     suspend fun saveCrashLog(deviceId: String, crashLog: CrashLog): Result<Unit> = runCatching {
         db.collection("devices").document(deviceId)
             .collection("crash_logs").document(crashLog.timestamp.toString())
-            .set(crashLog).await()
+            .set(crashLog.toMap()).await()
     }
 
     /** 크래시 로그 동기 전송 (앱 종료 직전 최대 timeoutMs 동안 대기) */
@@ -159,7 +159,7 @@ class FirestoreManager {
         return try {
             val task = db.collection("devices").document(deviceId)
                 .collection("crash_logs").document(crashLog.timestamp.toString())
-                .set(crashLog)
+                .set(crashLog.toMap())
             com.google.android.gms.tasks.Tasks.await(task, timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS)
             true
         } catch (e: Exception) {
@@ -171,6 +171,6 @@ class FirestoreManager {
     suspend fun saveExitLog(deviceId: String, exitLog: ExitLog): Result<Unit> = runCatching {
         db.collection("devices").document(deviceId)
             .collection("exit_logs").document(exitLog.timestamp.toString())
-            .set(exitLog).await()
+            .set(exitLog.toMap()).await()
     }
 }
