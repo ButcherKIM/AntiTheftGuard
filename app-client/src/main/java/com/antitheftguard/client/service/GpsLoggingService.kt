@@ -118,15 +118,49 @@ class GpsLoggingService : Service() {
         getSharedPreferences("antitheft", MODE_PRIVATE)
             .edit().putBoolean("is_service_running", true).apply()
         createNotificationChannel()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            androidx.core.app.ServiceCompat.startForeground(
-                this,
-                NOTIFICATION_ID,
-                createNotification(),
-                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
-            )
-        } else {
-            startForeground(NOTIFICATION_ID, createNotification())
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val hasBackgroundLocation = ContextCompat.checkSelfPermission(
+                    this,
+                    Manifest.permission.ACCESS_BACKGROUND_LOCATION
+                ) == PackageManager.PERMISSION_GRANTED
+
+                if (hasBackgroundLocation) {
+                    androidx.core.app.ServiceCompat.startForeground(
+                        this,
+                        NOTIFICATION_ID,
+                        createNotification(),
+                        android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+                    )
+                } else {
+                    Log.w(TAG, "ACCESS_BACKGROUND_LOCATION(항상 허용) 미보유. Android 14+ 크래시 방지를 위해 기본 포그라운드로 시작 시도.")
+                    try {
+                        androidx.core.app.ServiceCompat.startForeground(
+                            this,
+                            NOTIFICATION_ID,
+                            createNotification(),
+                            0
+                        )
+                    } catch (_: Exception) {
+                        startForeground(NOTIFICATION_ID, createNotification())
+                    }
+                }
+            } else {
+                startForeground(NOTIFICATION_ID, createNotification())
+            }
+        } catch (secEx: SecurityException) {
+            Log.e(TAG, "FGS 시작 중 보안 예외(SecurityException) 가로챔. 기본 포그라운드로 폴백 시도", secEx)
+            try {
+                startForeground(NOTIFICATION_ID, createNotification())
+            } catch (fallbackEx: Exception) {
+                Log.e(TAG, "기본 포그라운드 폴백 실패. 프로세스 크래시 방지를 위해 안전 종료.", fallbackEx)
+                stopSelf()
+                return
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "포그라운드 서비스 시작 예외 발생. 안전 종료.", e)
+            stopSelf()
+            return
         }
         
         deviceId = getSharedPreferences("antitheft", MODE_PRIVATE)

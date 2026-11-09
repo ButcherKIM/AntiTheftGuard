@@ -56,6 +56,20 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private val backgroundPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (!isGranted) {
+            // 시스템 팝업에서 거부되거나 앱 설정 화면 이동이 필요한 경우
+            try {
+                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                    data = Uri.parse("package:$packageName")
+                }
+                startActivity(intent)
+            } catch (_: Exception) {}
+        }
+    }
+
     private var activityCommandListener: com.google.firebase.firestore.ListenerRegistration? = null
     private var activityLastHandledRoomId: String = ""
 
@@ -202,6 +216,12 @@ class MainActivity : AppCompatActivity() {
             serviceIntent.action = GpsLoggingService.ACTION_SEND_IMMEDIATE_GPS
             ContextCompat.startForegroundService(this, serviceIntent)
             updateServiceStatusUi()
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+                ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+                != PackageManager.PERMISSION_GRANTED) {
+                checkBackgroundLocationPermission()
+            }
         } else {
             stopService(serviceIntent)
             prefs.edit().putBoolean("is_service_running", false).apply()
@@ -320,12 +340,31 @@ class MainActivity : AppCompatActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_BACKGROUND_LOCATION)
                 != PackageManager.PERMISSION_GRANTED) {
-                try {
-                    val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                        data = Uri.parse("package:$packageName")
+                
+                AlertDialog.Builder(this)
+                    .setTitle("📍 위치 권한 [항상 허용] 필요")
+                    .setMessage("화면이 꺼져 있거나 재부팅된 후에도 도난 방지 GPS 추적이 유지되려면 위치 권한을 반드시 [항상 허용]으로 설정해야 합니다.\n\n[설정하기]를 누른 후 위치 권한에서 '항상 허용'을 선택해 주세요.")
+                    .setPositiveButton("설정하기") { _, _ ->
+                        try {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                                backgroundPermissionLauncher.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+                            } else {
+                                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                    data = Uri.parse("package:$packageName")
+                                }
+                                startActivity(intent)
+                            }
+                        } catch (_: Exception) {
+                            try {
+                                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                    data = Uri.parse("package:$packageName")
+                                }
+                                startActivity(intent)
+                            } catch (_: Exception) {}
+                        }
                     }
-                    startActivity(intent)
-                } catch (_: Exception) {}
+                    .setNegativeButton("나중에", null)
+                    .show()
             }
         }
     }
